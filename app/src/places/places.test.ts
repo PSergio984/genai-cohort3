@@ -35,12 +35,14 @@ const FULL_BODY = {
 
 describe('masks', () => {
   it('CORE stays cheap, Atmosphere stays gated', () => {
-    for (const f of ['displayName', 'formattedAddress', 'rating']) {
-      assert.ok(CORE_MASK.includes(f));
+    for (const f of ['displayName', 'formattedAddress', 'location', 'rating', 'regularOpeningHours']) {
+      assert.ok(CORE_MASK.includes(f), `CORE must include ${f}`);
+    }
+    for (const f of ['photos', 'reviews', 'editorialSummary', 'types', 'websiteUri']) {
+      assert.ok(!CORE_MASK.includes(f), `CORE must exclude ${f}`);
     }
     for (const f of ['photos', 'reviews', 'editorialSummary']) {
-      assert.ok(!CORE_MASK.includes(f));
-      assert.ok(ATMOSPHERE_MASK.includes(f));
+      assert.ok(ATMOSPHERE_MASK.includes(f), `Atmosphere must include ${f}`);
     }
     assert.ok(!CORE_MASK.includes('*') && !ATMOSPHERE_MASK.includes('*'));
   });
@@ -59,7 +61,10 @@ describe('fetchPlaceDetails', () => {
 
   it('normalizes a full response, attribution always present', async () => {
     const { impl } = fakeFetch(FULL_BODY);
-    const d = await fetchPlaceDetails('ChIJX', CORE_MASK, { apiKey: 'k', fetchImpl: impl });
+    const d = await fetchPlaceDetails('ChIJX', `${CORE_MASK},${ATMOSPHERE_MASK}`, {
+      apiKey: 'k',
+      fetchImpl: impl,
+    });
     assert.equal(d.name, 'Rizal Park');
     assert.equal(d.address, 'Manila, Philippines');
     assert.equal(d.rating, 4.6);
@@ -67,6 +72,21 @@ describe('fetchPlaceDetails', () => {
     assert.equal(d.photos?.length, 1);
     assert.equal(d.editorialSummary, 'Historic urban park');
     assert.equal(d.attributions, 'Powered by Google');
+  });
+
+  it('CORE mask strips Atmosphere fields even when the API sends them', async () => {
+    const { impl } = fakeFetch(FULL_BODY);
+    const d = await fetchPlaceDetails('ChIJX', CORE_MASK, { apiKey: 'k', fetchImpl: impl });
+    assert.equal(d.photos, undefined);
+    assert.equal(d.reviews, undefined);
+    assert.equal(d.editorialSummary, undefined);
+    assert.equal(d.name, 'Rizal Park');
+  });
+
+  it('provider attributions propagate when present', async () => {
+    const { impl } = fakeFetch({ ...FULL_BODY, attributions: [{ provider: 'Listings Co' }, 'City Guide'] });
+    const d = await fetchPlaceDetails('ChIJX', CORE_MASK, { apiKey: 'k', fetchImpl: impl });
+    assert.equal(d.attributions, 'Listings Co; City Guide');
   });
 
   it('sparse response degrades to id + blanks, never crashes', async () => {
@@ -107,22 +127,13 @@ describe('toSnapshot', () => {
 });
 
 describe('createPlaceFetcher', () => {
-  it('returns the store FetchedPlace shape with a fresh timestamp', async () => {
+  it('returns the store FetchedPlace shape with a pinned clock', async () => {
     const { impl, seen } = fakeFetch(FULL_BODY);
-    const before = Date.now();
-    const got = await createPlaceFetcher('k', impl)('ChIJX');
-    assert.deepEqual(got.placeJson, {
-      placeId: 'ChIJX',
-      name: 'Rizal Park',
-      address: 'Manila, Philippines',
-      attributions: 'Powered by Google',
-      rating: 4.6,
-      hours: ['Mon: 5am-9pm'],
-      photos: [{ name: 'p1' }],
-      reviews: [{ rating: 5, text: 'Peaceful' }],
-      editorialSummary: 'Historic urban park',
-    });
-    assert.ok(got.fetchedAtMs >= before && got.fetchedAtMs <= Date.now());
+    const got = await createPlaceFetcher('k', impl, () => 1234567890000)('ChIJX');
+    const details = got.placeJson as Record<string, unknown>;
+    assert.equal(details['name'], 'Rizal Park');
+    assert.equal(details['photos'], undefined);
+    assert.equal(got.fetchedAtMs, 1234567890000);
     const headers = seen[0]?.init?.headers as Record<string, string>;
     assert.equal(headers['X-Goog-FieldMask'], CORE_MASK);
   });

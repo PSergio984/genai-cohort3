@@ -7,15 +7,14 @@ import type { FetchedPlace } from '../store/repository.js';
 
 const PLACES_API = 'https://places.googleapis.com/v1';
 
-/** Cheap everyday fields (Essentials/Pro). Requested on every grounding. */
+/** Cheap everyday fields. `location` rides along for map pins (UX decision);
+ * everything else is the inline card. Never `*`, never Atmosphere. */
 export const CORE_MASK = [
   'displayName',
   'formattedAddress',
   'location',
-  'types',
   'rating',
   'regularOpeningHours',
-  'websiteUri',
 ].join(',');
 
 /**
@@ -40,8 +39,6 @@ export interface FetchDeps {
   readonly apiKey: string;
   /** Injectable HTTP layer (tests pass a fake; production omits it). */
   readonly fetchImpl?: typeof fetch;
-  /** Injected clock for fetchedAt (tests pin it). */
-  readonly nowMs?: number;
 }
 
 interface PlacesResponse {
@@ -52,6 +49,25 @@ interface PlacesResponse {
   photos?: unknown[];
   reviews?: unknown[];
   editorialSummary?: { text?: string };
+  /** Provider attributions when the API returns them; defaulted otherwise. */
+  attributions?: Array<{ provider?: string }> | string[];
+}
+
+/** Field is Atmosphere-tier (expensive, expand-only) — never in CORE_MASK. */
+function wantsAtmosphere(mask: string, field: string): boolean {
+  return mask.split(',').map((f) => f.trim()).includes(field);
+}
+
+/** Prefer provider text when present; the generic mark otherwise (always rendered). */
+function resolveAttributions(body: PlacesResponse): string {
+  const fallback = 'Powered by Google';
+  if (!Array.isArray(body.attributions) || body.attributions.length === 0) {
+    return fallback;
+  }
+  const names = body.attributions
+    .map((a) => (typeof a === 'string' ? a : (a.provider ?? '')).trim())
+    .filter((n) => n !== '');
+  return names.length > 0 ? names.join('; ') : fallback;
 }
 
 /** Fetch + normalize one Place. Non-2xx rejects so callers degrade to ungrounded. */
@@ -68,19 +84,24 @@ export async function fetchPlaceDetails(
     throw new Error(`places lookup failed for ${placeId}: HTTP ${res.status}`);
   }
   const body = (await res.json()) as PlacesResponse;
-  const attributions = 'Powered by Google';
+  // Atmosphere fields are honored ONLY when the mask asks for them: a CORE
+  // response carrying them (or a sloppy mock) must not leak them downstream.
+  const atmospheric = (field: 'photos' | 'reviews' | 'editorialSummary'): boolean =>
+    wantsAtmosphere(mask, field);
   return {
     placeId,
     name: body.displayName?.text ?? placeId,
     address: body.formattedAddress ?? '',
-    attributions,
+    attributions: resolveAttributions(body),
     ...(body.rating !== undefined ? { rating: body.rating } : {}),
     ...(body.regularOpeningHours?.weekdayDescriptions !== undefined
       ? { hours: body.regularOpeningHours.weekdayDescriptions }
       : {}),
-    ...(body.photos !== undefined ? { photos: body.photos } : {}),
-    ...(body.reviews !== undefined ? { reviews: body.reviews } : {}),
-    ...(body.editorialSummary?.text !== undefined ? { editorialSummary: body.editorialSummary.text } : {}),
+    ...(atmospheric('photos') && body.photos !== undefined ? { photos: body.photos } : {}),
+    ...(atmospheric('reviews') && body.reviews !== undefined ? { reviews: body.reviews } : {}),
+    ...(atmospheric('editorialSummary') && body.editorialSummary?.text !== undefined
+      ? { editorialSummary: body.editorialSummary.text }
+      : {}),
   };
 }
 
@@ -101,13 +122,18 @@ export function toSnapshot(
 /**
  * Adapter into the store's read-through cache: CORE-mask fetch shaped as the
  * store's FetchedPlace. The store owns caching/TTL; this owns the wire.
+ * Clock injected (tests pin it; production omits it).
  */
-export function createPlaceFetcher(apiKey: string, fetchImpl?: typeof fetch) {
+export function createPlaceFetcher(
+  apiKey: string,
+  fetchImpl?: typeof fetch,
+  nowMs: () => number = Date.now,
+) {
   return async (placeId: string): Promise<FetchedPlace> => {
     const details = await fetchPlaceDetails(placeId, CORE_MASK, { apiKey, fetchImpl });
     return {
       placeJson: details,
-      fetchedAtMs: Date.now(),
+      fetchedAtMs: nowMs(),
     };
   };
 }
