@@ -10,8 +10,16 @@
 
 ```powershell
 $env:PROJECT_ID = "valid-meridian-475214-e3"
+$env:RUN_SA = "273533786531-compute@developer.gserviceaccount.com"
 # gcloud binary: C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd (SDK 583.0.0). Already on Machine PATH; if a shell misses it, refresh: $env:Path = [Machine] + ";" + [User], then `gcloud --version`.
+# RUN_SA = default compute SA (verified 2026-09-04 via `iam service-accounts list`; also used by bq-data-agent). Alternatives in-project: barista-agent-sa (coffee-barista), coffee-shop-agent-sa (coffee-mgr-agent). Dedicated SA for the journal can be decided in the ADR; default keeps codelab parity.
 ```
+
+## Where to get the API keys (console links, HITL)
+
+- **Gemini API key** → https://aistudio.google.com/apikey (Google AI Studio → Get API Key → Create; paste value as `GEMINI_API_KEY`, never commit it)
+- **Maps API key** → https://console.cloud.google.com/apis/credentials?project=valid-meridian-475214-e3 (Create Credentials → API key; restrict it: IP addresses of the Cloud Run service for server use + referrers only if a browser key is added later)
+- **Verify secrets afterwards** → https://console.cloud.google.com/security/secret-manager?project=valid-meridian-475214-e3
 
 ---
 
@@ -62,9 +70,9 @@ Result 2026-09-04: database `projects/valid-meridian-475214-e3/databases/coffee-
 gcloud secrets list --format="table(name)" --limit=10 --project=$PROJECT_ID --quiet
 gcloud secrets create gemini-api-key --data-file=- --project=$PROJECT_ID --quiet
 gcloud secrets create maps-api-key --data-file=- --project=$PROJECT_ID --quiet
-# DENYLIST — IAM binding modification, requires explicit human approval. NOT yet run:
-gcloud secrets add-iam-policy-binding gemini-api-key --member=serviceAccount:$RUN_SA --role=roles/secretmanager.secretAccessor --project=$PROJECT_ID --quiet
-gcloud secrets add-iam-policy-binding maps-api-key --member=serviceAccount:$RUN_SA --role=roles/secretmanager.secretAccessor --project=$PROJECT_ID --quiet
+# DENYLIST — IAM binding modification, requires explicit human approval AND existing secrets (binding to a missing secret fails). NOT yet run:
+gcloud secrets add-iam-policy-binding gemini-api-key --member=serviceAccount:273533786531-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor --project=$PROJECT_ID --quiet
+gcloud secrets add-iam-policy-binding maps-api-key --member=serviceAccount:273533786531-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor --project=$PROJECT_ID --quiet
 ```
 
 ---
@@ -97,4 +105,5 @@ gcloud logging read "resource.type=cloud_run_revision" --limit 20 --project=$PRO
 - `2026-09-04T16:00Z` — task resolution: SDK found at `C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd` (583.0.0, on Machine PATH; shell refresh fixes `where.exe` miss). Validated `help run deploy | secrets create | firestore databases create | run services describe`. `config list` → project `valid-meridian-475214-e3` / `eric.manabatseam@gmail.com`; `projects describe` → ACTIVE. Enabled: run, firestore, cloudbuild; DISABLED: secretmanager (needs approval). DB `coffee-menu` exists; services `bq-data-agent, coffee-barista, coffee-mgr-agent`. No writes executed (enable/IAM/create/deploy all gated). Sections 0-5 corrected to validated syntax.
 - `2026-09-04T16:20Z` — secretmanager enable APPROVED then attempted: `gcloud services enable secretmanager.googleapis.com --project=valid-meridian-475214-e3 --quiet` → FAILED_PRECONDITION UREQ_PROJECT_BILLING_NOT_OPEN (no open billing account on 273533786531). API still disabled; secrets create + IAM bindings stay gated behind (1) billing attach (console HITL), (2) enable re-run. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
 - `2026-09-04T16:35Z` — billing attached by human; re-ran enable → operation `acat.p2-273533786531-*` finished successfully; verified `secretmanager.googleapis.com` ENABLED via filtered list. `secrets list` → empty (no rows). Secrets create still gated on key values (GEMINI_API_KEY, MAPS_API_KEY) + IAM bindings gated on approval + RUN_SA. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
+- `2026-09-04T16:50Z` — RUN_SA resolved AFK: `273533786531-compute@developer.gserviceaccount.com` (default compute SA; `iam service-accounts list` also shows barista-agent-sa, coffee-shop-agent-sa, ais-gemini-key Flyrank-image; `run services list` confirms bq-data-agent uses default, coffee services use dedicated SAs). IAM bindings prepared with concrete SA in section 3 but NOT run (need secrets to exist + explicit approval). Key console links + Custom Instructions doc (`docs/ai-studio-custom-instructions.md`, codelab §§1–7 + repo §8 Maps delta) added. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
 
