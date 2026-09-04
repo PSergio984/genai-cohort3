@@ -11,13 +11,13 @@ describe('server', () => {
     server?.close();
   });
 
-  it('answers /healthz 200 with service identity and no x-powered-by', async () => {
+  it('answers /api/health 200 with service identity and no x-powered-by', async () => {
     await new Promise<void>((resolve) => {
       server = createApp().listen(0, '127.0.0.1', resolve);
     });
     const address = server?.address();
     assert.ok(address !== null && typeof address === 'object');
-    const res = await fetch(`http://127.0.0.1:${address.port}/healthz`);
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/health`);
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { status: 'ok', service: 'grounded-journal' });
     assert.equal(res.headers.get('x-powered-by'), null);
