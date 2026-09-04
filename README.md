@@ -7,9 +7,9 @@ enriched by local knowledge. Built for the
 — scored on Authenticity, Usability, Stability, Security. Baseline as-is won't
 score; the original feature (place-grounded reflection) is the direction.
 
-> Status: **planning** — the route is being charted on the
-> [wayfinder map](https://github.com/PSergio984/genai-cohort3/issues/1).
-> No app code yet; this README is the base everything builds on.
+> Status: **building** — the [wayfinder map](https://github.com/PSergio984/genai-cohort3/issues/1)
+> is complete (10/10) and two specs are `ready-for-agent` (feature + data/ship);
+> data slice implemented, app next. No app code yet.
 
 ## Quickstart (once `.env` is filled)
 
@@ -27,6 +27,10 @@ Copy-Item .env.example .env
 $env:PROJECT_ID = "valid-meridian-475214-e3"
 gcloud --version
 gcloud config list --format=json --quiet
+
+# 4. Rules tests (local emulator, no cloud, no keys)
+npx -y firebase-tools@latest emulators:exec --only firestore --project=demo-grounded-journal "npm test --prefix tests/firestore"
+node tests/parity.mjs   # README↔cmd.md drift check
 ```
 
 Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./cmd.md)
@@ -38,6 +42,9 @@ Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./
 | File | What it is |
 | ---- | ---------- |
 | [`cmd.md`](./cmd.md) | Reproducible gcloud log — the runbook. Append-only. |
+| [`firestore.rules`](./firestore.rules) | Vault isolation + retention backstop (ADR-0001). Tested (15/15 emulator); release needs one authed deploy, see `cmd.md` §2. |
+| [`firebase.json`](./firebase.json) | Rules path + local emulator config (port 8090). |
+| [`tests/firestore/`](./tests/firestore) | Emulator rules suite (`npm test` via `emulators:exec`) + `tests/parity.mjs` drift check. |
 | [`docs/ai-studio-custom-instructions.md`](./docs/ai-studio-custom-instructions.md) | Production Directives for the AI Studio App (§§1–7 codelab + §8 Maps delta). Paste into AI Studio Custom Instructions. |
 | [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) | Where issues live (GitHub) + `gh` conventions. |
 | [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) | `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`. |
@@ -54,12 +61,15 @@ Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./
 │   ├── ai-studio-custom-instructions.md
 │   └── agents/              # issue-tracker / triage-labels / domain
 ├── AGENTS.md                # agent-skills pointer block
+├── firestore.rules + firebase.json  # Vault rules (tested 15/15, pending one authed release) + emulator config
+├── tests/firestore/           # emulator rules suite + README↔cmd.md parity check
 └── research/<name>/         # throwaway finding sheets (on research/* branches, not main)
 ```
 
 Active GCP project: `valid-meridian-475214-e3` (run, firestore, cloudbuild,
 secretmanager enabled; secrets `gemini-api-key` + `maps-api-key` v1;
-dedicated Firestore DB `grounded-journal` in us-central1; runtime SA
+dedicated Firestore DB `grounded-journal` in us-central1 — TTL ACTIVE, history
+index READY, rules tested-not-yet-released; runtime SA
 `273533786531-compute@developer.gserviceaccount.com`).
 Full cloud state + history: [`cmd.md`](./cmd.md).
 

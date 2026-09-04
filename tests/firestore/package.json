@@ -1,0 +1,14 @@
+{
+  "name": "grounded-journal-rules-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Behavior tests for firestore.rules (ADR-0001) against the local Firestore emulator. No cloud access, no secrets.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test rules.test.js"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.0",
+    "firebase": "^11.0.0"
+  }
+}

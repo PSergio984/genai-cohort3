@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// Grounded Journal — Vault isolation + retention backstop (ADR-0001).
+// Database: grounded-journal. Every Entry, Session artifact, and Grounding
+// lives under exactly one Vault; the Vault boundary is the privacy boundary.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /vaults/{vaultId} {
+      // Owner lookup on the parent Vault doc. Null-safe: exists() first,
+      // so creates and reads of missing docs deny instead of erroring.
+      function vaultOwner() {
+        return exists(/databases/$(database)/documents/vaults/$(vaultId))
+          ? get(/databases/$(database)/documents/vaults/$(vaultId)).data.ownerUid
+          : null;
+      }
+      function isOwner() {
+        return request.auth != null && vaultOwner() == request.auth.uid;
+      }
+
+      allow read: if isOwner();
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isOwner()
+        && resource.data.ownerUid == request.auth.uid;
+
+      // Entries: owner identity denormalized on every doc (glossary: an
+      // Entry lives in exactly one Vault; history reads filter + order here).
+      match /entries/{entryId} {
+        allow read: if isOwner()
+          && resource.data.ownerUid == request.auth.uid;
+        allow create: if isOwner()
+          && request.resource.data.ownerUid == request.auth.uid;
+        allow update, delete: if isOwner()
+          && resource.data.ownerUid == request.auth.uid;
+      }
+
+      // Place cache: per-Vault only (never global — Maps Terms B.6.3.2).
+      // Retention backstop: backend computes expiresAt, the rule holds the
+      // 30-day ceiling so a buggy client can never stretch retention.
+      match /placeCache/{placeId} {
+        allow read: if isOwner()
+          && (!('expiresAt' in resource.data)
+            || resource.data.expiresAt > request.time);
+        allow create, update: if isOwner()
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time
+          && request.resource.data.expiresAt <= request.time + duration.value(30, 'd');
+        allow delete: if isOwner();
+      }
+    }
+  }
+}

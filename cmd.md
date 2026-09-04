@@ -55,9 +55,17 @@ Result 2026-09-04: `run` ENABLED, `firestore` ENABLED, `cloudbuild` ENABLED; `se
 # Validated: --location REQUIRED, --type default firestore-native, --database default "(default)" (per help firestore databases create). Dedicated DB per decision 2026-09-04 (not (default)).
 gcloud firestore databases list --format="value(name)" --project=$PROJECT_ID --quiet
 gcloud firestore databases create --database=grounded-journal --location=us-central1 --type=firestore-native --project=$PROJECT_ID --quiet
-# deploy rules (firebase-basics skill: npx firebase-tools; target the named DB, not (default))
+# deploy rules: needs authed Firebase (browser login — `npx firebase-tools login`; plain CLI hangs headless, verified 2026-09-04). Then pick the grounded-journal DB at the prompt. Rules API alternative NOT used: named-DB release IDs unverifiable, guessing risks false security.
 npx -y firebase-tools@latest deploy --only firestore:rules --project=$PROJECT_ID
+# TTL (validated: help firestore fields ttls update; one TTL field per collection group):
+gcloud firestore fields ttls update expiresAt --collection-group=placeCache --database=grounded-journal --enable-ttl --project=$PROJECT_ID --quiet
+gcloud firestore fields ttls list --database=grounded-journal --project=$PROJECT_ID --quiet
+# history index (validated: help firestore indexes composite create; PowerShell: QUOTE flag values or commas split args):
+gcloud firestore indexes composite create --collection-group=entries --database=grounded-journal "--field-config=field-path=ownerUid,order=ascending" "--field-config=field-path=createdAt,order=descending" --project=$PROJECT_ID --quiet --async
+gcloud firestore indexes composite list --database=grounded-journal --project=$PROJECT_ID --quiet
 ```
+
+Result 2026-09-04: `firestore.rules` written (ADR-0001, compiler-clean via Rules API, auth matrix 3/3 green, emulator suite 15/15 green — see tests/firestore) but NOT yet released (see HITL note above; empty DB = zero exposure meanwhile). TTL `placeCache.expiresAt` ACTIVE. History index (entries: ownerUid ASC + createdAt DESC, COLLECTION scope) READY.
 
 Result 2026-09-04: dedicated `projects/valid-meridian-475214-e3/databases/grounded-journal` CREATED (us-central1, FIRESTORE_NATIVE, STANDARD, realtime updates on, PITR off, delete protection off). Pre-existing `coffee-menu` (asia-east1) left untouched. Note: named DB reports `freeTier: false` — tiny dev volumes cost ~nothing, but keep the budget alerts from the ADR. Rules deploy must target `grounded-journal`; schema/collections per Firestore research + ADR.
 
@@ -110,4 +118,5 @@ gcloud logging read "resource.type=cloud_run_revision" --limit 20 --project=$PRO
 - `2026-09-04T16:50Z` — RUN_SA resolved AFK: `273533786531-compute@developer.gserviceaccount.com` (default compute SA; `iam service-accounts list` also shows barista-agent-sa, coffee-shop-agent-sa, ais-gemini-key Flyrank-image; `run services list` confirms bq-data-agent uses default, coffee services use dedicated SAs). IAM bindings prepared with concrete SA in section 3 but NOT run (need secrets to exist + explicit approval). Key console links + Custom Instructions doc (`docs/ai-studio-custom-instructions.md`, codelab §§1–7 + repo §8 Maps delta) added. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
 - `2026-09-04T17:00Z` — secrets STAGED with human proceed: both created from `.env` via stdin (script-fed, no shell pipes, values never logged) — version [1] each. IAM bindings for default compute SA applied + verified (`get-iam-policy` shows SA + secretAccessor on both). Secrets infra COMPLETE; next is deploy (out of planning map scope until requested).
 - `2026-09-04T17:10Z` — dedicated Firestore `grounded-journal` CREATED (us-central1, native, STANDARD) per human request; `coffee-menu` (asia-east1) untouched. Named DB = `freeTier: false`, keep budget alerts. Rules + schema pending ADR.
+- `2026-09-04T18:00Z` — data slice implemented (spec #13): `firestore.rules` written (ADR-0001; compiler-clean, Rules API auth matrix 3/3 green); emulator suite `tests/firestore` 15/15 green (ownership + retention incl. ceiling/past/missing-expiry/update-extension/stranger edges); TTL `placeCache.expiresAt` ACTIVE; history index (ownerUid ASC + createdAt DESC, COLLECTION scope) READY; `firebase.json` added (rules + emulator port 8090); parity script `tests/parity.mjs` green. Rules NOT released: firebase CLI needs browser login (HITL) and Rules API named-DB release IDs are unverifiable — release is one authed `deploy --only firestore:rules` (pick grounded-journal) away; empty DB = zero exposure meanwhile.
 
