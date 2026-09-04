@@ -1,0 +1,42 @@
+# ── Secrets: NEVER commit these ─────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+*.pem
+*.key
+service-account*.json
+*-key.json
+
+# ── Generated / local-only ──────────────────────────────────
+graphify-out/
+.agents/
+raw/
+*.log
+
+# ── OS / IDE ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── Node (when the app lands) ───────────────────────────────
+node_modules/
+dist/
+.next/
+out/
+coverage/
+
+# ── Python (graphify tooling, scripts) ──────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ── Firebase / gcloud local ─────────────────────────────────
+.firebase/
+.firebaserc
+gcloud-*.log
