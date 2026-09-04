@@ -37,6 +37,22 @@ Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./
 — read it before running anything; it carries the validated syntax, the guardrails
 (`--quiet --project --region`, no IAM/delete/billing without approval), and the log.
 
+## Deploy (data slice)
+
+1. **Prereqs:** gcloud SDK + Firebase CLI (`npx firebase-tools`), project
+   `valid-meridian-475214-e3` with run/firestore/cloudbuild/secretmanager enabled.
+2. **Secrets:** `.env` holds `GEMINI_API_KEY` + `MAPS_API_KEY` (never committed);
+   Secret Manager versions `gemini-api-key` / `maps-api-key` v1 exist with
+   `secretAccessor` for the runtime SA (verify: `cmd.md` §3).
+3. **Rules:** `npx firebase-tools deploy --only firestore:rules` (needs browser
+   login — the one HITL step), picking the `grounded-journal` database. TTL
+   (`placeCache.expiresAt`) is ACTIVE; history index READY.
+4. **Container:** `gcloud run deploy personal-gemini-journal --source . …`
+   (full command in `cmd.md` §4 — volume-mounted Maps secret, pinned SA,
+   challenge labels).
+5. **Verify:** service URL via `run services describe`; smoke the endpoint;
+   challenge labeling present. Full checklist in `cmd.md` §5.
+
 ## Docs index
 
 | File | What it is |

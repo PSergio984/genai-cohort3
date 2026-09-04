@@ -9,39 +9,49 @@ service cloud.firestore {
     match /vaults/{vaultId} {
       // Owner lookup on the parent Vault doc. Null-safe: exists() first,
       // so creates and reads of missing docs deny instead of erroring.
+      function vaultPath() {
+        return /databases/$(database)/documents/vaults/$(vaultId);
+      }
       function vaultOwner() {
-        return exists(/databases/$(database)/documents/vaults/$(vaultId))
-          ? get(/databases/$(database)/documents/vaults/$(vaultId)).data.ownerUid
-          : null;
+        return exists(vaultPath()) ? get(vaultPath()).data.ownerUid : null;
       }
       function isOwner() {
         return request.auth != null && vaultOwner() == request.auth.uid;
+      }
+      // Document owner check: caller owns the Vault AND the doc is stamped
+      // with the caller's identity. Used everywhere a doc carries ownerUid.
+      function isDocOwner() {
+        return isOwner() && resource.data.ownerUid == request.auth.uid;
       }
 
       allow read: if isOwner();
       allow create: if request.auth != null
         && request.resource.data.ownerUid == request.auth.uid;
-      allow update, delete: if isOwner()
-        && resource.data.ownerUid == request.auth.uid;
+      // Ownership transfer forbidden: ownerUid is immutable after create.
+      allow update: if isDocOwner()
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if isDocOwner();
 
       // Entries: owner identity denormalized on every doc (glossary: an
       // Entry lives in exactly one Vault; history reads filter + order here).
       match /entries/{entryId} {
-        allow read: if isOwner()
-          && resource.data.ownerUid == request.auth.uid;
+        allow read: if isDocOwner();
         allow create: if isOwner()
           && request.resource.data.ownerUid == request.auth.uid;
-        allow update, delete: if isOwner()
-          && resource.data.ownerUid == request.auth.uid;
+        // New ownerUid must still be the caller: forgery rejected.
+        allow update: if isDocOwner()
+          && request.resource.data.ownerUid == request.auth.uid;
+        allow delete: if isDocOwner();
       }
 
       // Place cache: per-Vault only (never global — Maps Terms B.6.3.2).
       // Retention backstop: backend computes expiresAt, the rule holds the
       // 30-day ceiling so a buggy client can never stretch retention.
+      // Reads require a live expiresAt: expiry-less docs are unreadable,
+      // so nothing outlives retention through a read path.
       match /placeCache/{placeId} {
         allow read: if isOwner()
-          && (!('expiresAt' in resource.data)
-            || resource.data.expiresAt > request.time);
+          && resource.data.expiresAt > request.time;
         allow create, update: if isOwner()
           && request.resource.data.expiresAt is timestamp
           && request.resource.data.expiresAt > request.time
