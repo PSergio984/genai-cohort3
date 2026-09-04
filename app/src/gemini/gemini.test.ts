@@ -48,6 +48,13 @@ describe('buildSystemInstruction', () => {
       assert.ok(s.includes(phrase), `missing: ${phrase}`);
     }
   });
+
+  it('lists the allowed fields so unknown ones are uninventable', () => {
+    const s = buildSystemInstruction();
+    for (const f of ['name', 'address', 'rating', 'hours', 'attributions']) {
+      assert.ok(s.includes(f), `missing allowed field: ${f}`);
+    }
+  });
 });
 
 describe('buildUserMessage', () => {
@@ -63,6 +70,24 @@ describe('buildUserMessage', () => {
     const m = buildUserMessage('Which cafe?', [SNAP, SNAP2]);
     assert.ok(m.includes('Rizal Park'));
     assert.ok(m.includes('Escolta Cafe'));
+  });
+
+  it('block carries place_id + attribution, task demands per-place citation', () => {
+    const m = buildUserMessage('Entry text.', [SNAP]);
+    assert.ok(m.includes('ChIJRIZALPARK'));
+    assert.ok(m.includes('Attribution: Powered by Google'));
+    assert.ok(m.includes('Cite each place by name for every fact'));
+  });
+
+  it('follow-up history renders in order for anaphora resolution', () => {
+    const m = buildUserMessage('What about the lake there?', [SNAP], [
+      { by: 'model', text: 'First reflection.' },
+      { by: 'user', text: 'What about the lake there?' },
+    ]);
+    const first = m.indexOf('First reflection.');
+    const second = m.indexOf('What about the lake there?', m.indexOf('[HISTORY]'));
+    assert.ok(m.includes('[HISTORY]'));
+    assert.ok(first !== -1 && second !== -1 && first < second);
   });
 
   it('ungrounded variant carries no place claims and says so', () => {
