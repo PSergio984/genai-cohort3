@@ -9,11 +9,11 @@ The user's raw journal input, immutable once written. May stand without Groundin
 _Avoid_: post, note, turn
 
 **Reflection**:
-Gemini's grounded response bound to exactly one Entry.
+Gemini's response to a Session turn, each bound to exactly one Entry; an Entry may have many.
 _Avoid_: reply, answer, summary
 
 **Grounding**:
-The persisted binding of one Entry to Place context (place_id + snapshot + timestamp) — the audit trail of what Gemini saw. Visible to the Entry's whole Session.
+The persisted binding of one Entry to one Place context (place_id + snapshot + timestamp) — the audit trail of what Gemini saw. An Entry may carry several; each is visible to the Entry's whole Session. Editable until the first Reflection, frozen after.
 _Avoid_: attachment, annotation, context blob
 
 **Place**:
