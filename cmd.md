@@ -90,8 +90,8 @@ gcloud secrets add-iam-policy-binding maps-api-key --member=serviceAccount:27353
 ## 4. Build & Deploy
 
 ```bash
-# Validated: --source builds via Dockerfile/buildpacks, --update-secrets /path=SECRET:version mounts volume (always latest) vs --set-secrets env (startup-pinned), --labels alias of --update-labels (per help run deploy). No --dry-run supported.
-gcloud run deploy personal-gemini-journal --source . --region us-central1 --allow-unauthenticated --update-secrets=/secrets/maps-api-key=maps-api-key:latest --set-secrets=GEMINI_API_KEY=gemini-api-key:latest --service-account=$RUN_SA --labels=challenge=codelab,app=grounded-journal --project=$PROJECT_ID --quiet
+# Validated: --source builds via Dockerfile/buildpacks, --update-secrets takes BOTH forms comma-separated (/path=SECRET:version mounts volume always-latest, KEY=SECRET:version sets env startup-pinned), --labels alias of --update-labels (per help run deploy). No --dry-run supported. GOTCHA 2026-09-04: --set-secrets and --update-secrets are mutually exclusive (one group) — first CD failed on it; combined form below is the fix.
+gcloud run deploy personal-gemini-journal --source . --region us-central1 --allow-unauthenticated --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest --service-account=$RUN_SA --labels=challenge=codelab,app=grounded-journal --project=$PROJECT_ID --quiet
 gcloud run services describe personal-gemini-journal --region us-central1 --project=$PROJECT_ID --quiet
 ```
 
@@ -123,4 +123,5 @@ gcloud logging read "resource.type=cloud_run_revision" --limit 20 --project=$PRO
 - `2026-09-04T19:30Z` — CI red, fixed: rules job `npm ci` failed on firebase@11 vs rules-unit-testing peer @10 (local `--legacy-peer-deps` doesn't transfer) → pinned test-only `firebase@^10`, lockfile regenerated, stock `npm ci` verified; one v10 SDK quirk found (denied-read→write same context trips settings-lock) → split into single-assert tests, suite 20/20. CD skips green until `GCP_CREDENTIALS` exists (`if:` guard — that secret is the one human step).
 - `2026-09-04T19:45Z` — CD red at parse (0 jobs): `secrets` context is illegal in job-level `if` — moved to a step-level skip guard (build still runs, cloud steps skip). CI + CD both green after (`2415d62`).
 - `2026-09-04T20:00Z` — CD enabled for real: `github-cd` SA created with `run.admin` + `serviceAccountUser` on the runtime SA; `GCP_CREDENTIALS` Actions secret set (two orphan keys from failed uploads deleted). Next push runs build + `run deploy` live.
+- `2026-09-04T20:15Z` — first CD failed in 42s (arg parse): `--set-secrets` + `--update-secrets` are mutually exclusive (one group — misread earlier). Fixed to the documented combined form `--update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest` in cd.yml + §4.
 

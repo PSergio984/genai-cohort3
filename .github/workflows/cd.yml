@@ -63,6 +63,8 @@ jobs:
 
       # Mirrors cmd.md section 4 (validated syntax) + --max-instances=4 as the
       # billing guardrail. Dockerfile at repo root makes --source . deterministic.
+      # NOTE: --set-secrets and --update-secrets are mutually exclusive — both
+      # bindings ride one --update-secrets (slash-prefixed = volume, else env).
       - name: Deploy to Cloud Run
         if: steps.creds.outputs.skip != 'true'
         run: >
@@ -70,8 +72,7 @@ jobs:
           --source .
           --region us-central1
           --allow-unauthenticated
-          --update-secrets=/secrets/maps-api-key=maps-api-key:latest
-          --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+          --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest
           --service-account=273533786531-compute@developer.gserviceaccount.com
           --labels=challenge=codelab,app=grounded-journal
           --max-instances=4
