@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # Skips (green) until the GCP_CREDENTIALS secret exists — no red builds
+    # while the one human step below is still pending.
+    if: ${{ secrets.GCP_CREDENTIALS != '' }}
 
     # Required repo secret (Settings → Secrets → Actions):
     #   GCP_CREDENTIALS — service-account JSON key with roles/run.admin on the

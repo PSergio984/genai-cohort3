@@ -193,9 +193,13 @@ test('extending expiry past the ceiling on update fails', async () => {
   await assertFails(updateDoc(authedDoc(alice, 'vaults/v1/placeCache/p1'), { expiresAt: daysFromNow(60) }));
 });
 
-test('stranger cannot read or write cache', async () => {
+test('stranger cannot read cache', async () => {
   const { bob } = await seed();
   await assertFails(getDoc(authedDoc(bob, 'vaults/v1/placeCache/p1')));
+});
+
+test('stranger cannot write cache', async () => {
+  const { bob } = await seed();
   await assertFails(
     setDoc(authedDoc(bob, 'vaults/v1/placeCache/p2'), {
       placeJson: { name: 'X' },
