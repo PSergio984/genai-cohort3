@@ -37,7 +37,7 @@ gcloud services enable secretmanager.googleapis.com --project=$PROJECT_ID --quie
 gcloud services list --enabled --filter="config.name:run.googleapis.com" --format="value(config.name)" --project=$PROJECT_ID --quiet
 ```
 
-Result 2026-09-04: `run` ENABLED, `firestore` ENABLED, `cloudbuild` ENABLED; `secretmanager` STILL DISABLED — enable returned `FAILED_PRECONDITION: Billing account for project '273533786531' is not open (UREQ_PROJECT_BILLING_NOT_OPEN)`. Secret Manager requires an open billing account, and `gcloud billing *` is denylisted (financial risk) — attaching billing is a console HITL step. Checklist: (1) attach/open billing for `valid-meridian-475214-e3` in Cloud Console → Billing, (2) re-run the enable line above, (3) verify with the filtered list check. Do NOT run other enables until approved.
+Result 2026-09-04: `run` ENABLED, `firestore` ENABLED, `cloudbuild` ENABLED; `secretmanager` ENABLED 2026-09-04 after billing attach (first attempt failed UREQ_PROJECT_BILLING_NOT_OPEN; user attached billing, re-run `operations/acat.p2-273533786531-*` finished successfully, verified via filtered list). All four deploy-plan APIs now on.
 
 ---
 
@@ -58,7 +58,8 @@ Result 2026-09-04: database `projects/valid-meridian-475214-e3/databases/coffee-
 ## 3. Secrets
 
 ```bash
-# Validated: --data-file=- reads stdin (per help secrets create). Needs secretmanager API (currently DISABLED — see section 1).
+# Validated: --data-file=- reads stdin (per help secrets create). API now ENABLED; store empty (verified 2026-09-04: `secrets list` returns no rows). Creation gated on key material from human — do NOT invent values.
+gcloud secrets list --format="table(name)" --limit=10 --project=$PROJECT_ID --quiet
 gcloud secrets create gemini-api-key --data-file=- --project=$PROJECT_ID --quiet
 gcloud secrets create maps-api-key --data-file=- --project=$PROJECT_ID --quiet
 # DENYLIST — IAM binding modification, requires explicit human approval. NOT yet run:
@@ -95,4 +96,5 @@ gcloud logging read "resource.type=cloud_run_revision" --limit 20 --project=$PRO
 - `2026-09-04T15:30Z` — scaffold created from research branches #2, #3, #4, #5 — see https://github.com/PSergio984/genai-cohort3/issues/1
 - `2026-09-04T16:00Z` — task resolution: SDK found at `C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd` (583.0.0, on Machine PATH; shell refresh fixes `where.exe` miss). Validated `help run deploy | secrets create | firestore databases create | run services describe`. `config list` → project `valid-meridian-475214-e3` / `eric.manabatseam@gmail.com`; `projects describe` → ACTIVE. Enabled: run, firestore, cloudbuild; DISABLED: secretmanager (needs approval). DB `coffee-menu` exists; services `bq-data-agent, coffee-barista, coffee-mgr-agent`. No writes executed (enable/IAM/create/deploy all gated). Sections 0-5 corrected to validated syntax.
 - `2026-09-04T16:20Z` — secretmanager enable APPROVED then attempted: `gcloud services enable secretmanager.googleapis.com --project=valid-meridian-475214-e3 --quiet` → FAILED_PRECONDITION UREQ_PROJECT_BILLING_NOT_OPEN (no open billing account on 273533786531). API still disabled; secrets create + IAM bindings stay gated behind (1) billing attach (console HITL), (2) enable re-run. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
+- `2026-09-04T16:35Z` — billing attached by human; re-ran enable → operation `acat.p2-273533786531-*` finished successfully; verified `secretmanager.googleapis.com` ENABLED via filtered list. `secrets list` → empty (no rows). Secrets create still gated on key values (GEMINI_API_KEY, MAPS_API_KEY) + IAM bindings gated on approval + RUN_SA. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
 
