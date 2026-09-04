@@ -58,7 +58,8 @@ Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./
 ```
 
 Active GCP project: `valid-meridian-475214-e3` (run, firestore, cloudbuild,
-secretmanager enabled; Firestore DB `coffee-menu`; runtime SA
+secretmanager enabled; secrets `gemini-api-key` + `maps-api-key` v1;
+dedicated Firestore DB `grounded-journal` in us-central1; runtime SA
 `273533786531-compute@developer.gserviceaccount.com`).
 Full cloud state + history: [`cmd.md`](./cmd.md).
 

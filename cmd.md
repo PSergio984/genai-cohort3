@@ -52,14 +52,14 @@ Result 2026-09-04: `run` ENABLED, `firestore` ENABLED, `cloudbuild` ENABLED; `se
 ## 2. Firestore
 
 ```bash
-# Validated: --location REQUIRED, --type default firestore-native, --database default "(default)" (per help firestore databases create). Only create if no DB exists.
+# Validated: --location REQUIRED, --type default firestore-native, --database default "(default)" (per help firestore databases create). Dedicated DB per decision 2026-09-04 (not (default)).
 gcloud firestore databases list --format="value(name)" --project=$PROJECT_ID --quiet
-gcloud firestore databases create --location=us-central1 --type=firestore-native --project=$PROJECT_ID --quiet
-# deploy rules (firebase-basics skill: npx firebase-tools)
+gcloud firestore databases create --database=grounded-journal --location=us-central1 --type=firestore-native --project=$PROJECT_ID --quiet
+# deploy rules (firebase-basics skill: npx firebase-tools; target the named DB, not (default))
 npx -y firebase-tools@latest deploy --only firestore:rules --project=$PROJECT_ID
 ```
 
-Result 2026-09-04: database `projects/valid-meridian-475214-e3/databases/coffee-menu` already exists — do NOT create `(default)` without a decision (would diverge from existing DB; ADR input).
+Result 2026-09-04: dedicated `projects/valid-meridian-475214-e3/databases/grounded-journal` CREATED (us-central1, FIRESTORE_NATIVE, STANDARD, realtime updates on, PITR off, delete protection off). Pre-existing `coffee-menu` (asia-east1) left untouched. Note: named DB reports `freeTier: false` — tiny dev volumes cost ~nothing, but keep the budget alerts from the ADR. Rules deploy must target `grounded-journal`; schema/collections per Firestore research + ADR.
 
 ---
 
@@ -109,4 +109,5 @@ gcloud logging read "resource.type=cloud_run_revision" --limit 20 --project=$PRO
 - `2026-09-04T16:35Z` — billing attached by human; re-ran enable → operation `acat.p2-273533786531-*` finished successfully; verified `secretmanager.googleapis.com` ENABLED via filtered list. `secrets list` → empty (no rows). Secrets create still gated on key values (GEMINI_API_KEY, MAPS_API_KEY) + IAM bindings gated on approval + RUN_SA. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
 - `2026-09-04T16:50Z` — RUN_SA resolved AFK: `273533786531-compute@developer.gserviceaccount.com` (default compute SA; `iam service-accounts list` also shows barista-agent-sa, coffee-shop-agent-sa, ais-gemini-key Flyrank-image; `run services list` confirms bq-data-agent uses default, coffee services use dedicated SAs). IAM bindings prepared with concrete SA in section 3 but NOT run (need secrets to exist + explicit approval). Key console links + Custom Instructions doc (`docs/ai-studio-custom-instructions.md`, codelab §§1–7 + repo §8 Maps delta) added. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
 - `2026-09-04T17:00Z` — secrets STAGED with human proceed: both created from `.env` via stdin (script-fed, no shell pipes, values never logged) — version [1] each. IAM bindings for default compute SA applied + verified (`get-iam-policy` shows SA + secretAccessor on both). Secrets infra COMPLETE; next is deploy (out of planning map scope until requested).
+- `2026-09-04T17:10Z` — dedicated Firestore `grounded-journal` CREATED (us-central1, native, STANDARD) per human request; `coffee-menu` (asia-east1) untouched. Named DB = `freeTier: false`, keep budget alerts. Rules + schema pending ADR.
 
