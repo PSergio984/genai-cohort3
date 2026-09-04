@@ -56,7 +56,7 @@ class FakeStore implements JournalStore {
     if (e === null) {
       throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
     }
-    this.entries.set(`${vaultId}/${entryId}`, { ...e, geminiReflection: text });
+    this.entries.set(`${vaultId}/${entryId}`, { ...e, reflections: [...e.reflections, text] });
   }
 
   async appendGrounding(vaultId: string, entryId: string, ownerUid: string, snapshot: GroundingSnapshot) {
@@ -251,6 +251,19 @@ describe('journal routes', () => {
       placeId: 'ChIJY',
     });
     assert.equal(frozen.status, 409);
+  });
+
+  it('repeat reflects extend the thread', async () => {
+    const created = await post(`${url}/api/vaults/v1/entries`, { ownerUid: 'v1', text: 'here' });
+    const id = created.json.id as string;
+    await post(`${url}/api/vaults/v1/entries/${id}/reflections`, { ownerUid: 'v1' });
+    ctx.gemini.reply = 'second words';
+    const r2 = await post(`${url}/api/vaults/v1/entries/${id}/reflections`, { ownerUid: 'v1' });
+    assert.equal(r2.status, 201);
+    assert.equal(r2.json.reflection, 'second words');
+    const res = await fetch(`${url}/api/vaults/v1/entries?ownerUid=v1`);
+    const body = (await res.json()) as { entries: Array<{ entry: { reflections: string[] } }> };
+    assert.deepEqual(body.entries[0]?.entry.reflections, ['grounded words', 'second words']);
   });
 
   it('maps model failures to 429/502/500', async () => {

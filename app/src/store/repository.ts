@@ -31,7 +31,8 @@ export interface EntryRecord {
   readonly text: string;
   readonly placeIds: readonly string[];
   readonly groundingSnapshots: readonly GroundingSnapshot[];
-  readonly geminiReflection: string | null;
+  /** Append-only thread: every model reply is recorded, never overwritten. */
+  readonly reflections: readonly string[];
   readonly createdAt: string;
 }
 

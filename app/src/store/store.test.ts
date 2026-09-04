@@ -36,7 +36,7 @@ function entry(over: Partial<EntryRecord> = {}): EntryRecord {
     text: 'seed entry',
     placeIds: [],
     groundingSnapshots: [],
-    geminiReflection: null,
+    reflections: [],
     createdAt: iso(T0),
     ...over,
   };
@@ -214,7 +214,16 @@ describe('saveEntry / listEntries', () => {
     const id = await store.saveEntry(v, entry());
     await store.saveReflection(v, id, 'alice', 'grounded words');
     const listed = await store.listEntries(v, 'alice', 10);
-    assert.equal(listed[0]?.entry.geminiReflection, 'grounded words');
+    assert.deepEqual(listed[0]?.entry.reflections, ['grounded words']);
+  });
+
+  it('repeat reflects extend the thread, never overwrite', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await store.saveReflection(v, id, 'alice', 'first');
+    await store.saveReflection(v, id, 'alice', 'second');
+    const listed = await store.listEntries(v, 'alice', 10);
+    assert.deepEqual(listed[0]?.entry.reflections, ['first', 'second']);
   });
 
   it('saveReflection by another owner rejects', async () => {

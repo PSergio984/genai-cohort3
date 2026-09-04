@@ -92,28 +92,36 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
         throw new Error(`owner mismatch: entry belongs to another Vault owner`);
       }
       // Owner identity is enforced by the rules on the merged document
-      // (ownerUid untouched); only the reflection text is written.
-      await entriesCol(db, vaultId).doc(entryId).update({ geminiReflection: text });
+      // (ownerUid untouched); the reflection text is APPENDED — repeat
+      // reflects extend the thread, never overwrite (spec: every model
+      // reply is recorded on the same Entry).
+      await entriesCol(db, vaultId).doc(entryId).update({
+        reflections: FieldValue.arrayUnion(text),
+      });
     },
 
     async appendGrounding(vaultId, entryId, ownerUid, snapshot: GroundingSnapshot): Promise<void> {
       const ref = entriesCol(db, vaultId).doc(entryId);
-      const snap = await ref.get();
-      const data = snap.data() as EntryRecord | undefined;
-      if (data === undefined) {
-        throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
-      }
-      if (data.ownerUid !== ownerUid) {
-        throw new Error(`owner mismatch: entry belongs to another Vault owner`);
-      }
-      // Idempotent on placeId: duplicate attaches are refused upstream, and
-      // a retry must not double-append.
-      if (data.placeIds.includes(snapshot.placeId)) {
-        return;
-      }
-      await ref.update({
-        placeIds: FieldValue.arrayUnion(snapshot.placeId),
-        groundingSnapshots: FieldValue.arrayUnion({ ...snapshot }),
+      // Transaction: the duplicate check and the write are atomic, so two
+      // concurrent attaches of the same place cannot double-append.
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const data = snap.data() as EntryRecord | undefined;
+        if (data === undefined) {
+          throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
+        }
+        if (data.ownerUid !== ownerUid) {
+          throw new Error(`owner mismatch: entry belongs to another Vault owner`);
+        }
+        // Idempotent on placeId: duplicate attaches are refused upstream, and
+        // a retry must not double-append.
+        if (data.placeIds.includes(snapshot.placeId)) {
+          return;
+        }
+        tx.update(ref, {
+          placeIds: FieldValue.arrayUnion(snapshot.placeId),
+          groundingSnapshots: FieldValue.arrayUnion({ ...snapshot }),
+        });
       });
     },
 

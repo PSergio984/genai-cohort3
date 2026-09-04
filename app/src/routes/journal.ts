@@ -31,14 +31,14 @@ export interface JournalDeps {
 const MAX_TEXT = 5000;
 const MAX_HISTORY = 20;
 
-function bad(res: Response, status: number, error: string): void {
+function sendError(res: Response, status: number, error: string): void {
   res.status(status).json({ error });
 }
 
 /** Path params are strings by route contract; reject loudly otherwise. */
 function pathParam(res: Response, value: unknown, name: string): string | undefined {
   if (typeof value !== 'string' || value === '') {
-    bad(res, 400, `${name} is required`);
+    sendError(res, 400, `${name} is required`);
     return undefined;
   }
   return value;
@@ -47,7 +47,7 @@ function pathParam(res: Response, value: unknown, name: string): string | undefi
 /** One Vault per user: the path vault and the claimed owner must agree. */
 function checkVaultOwner(vaultId: string, ownerUid: unknown, res: Response): ownerUid is string {
   if (typeof ownerUid !== 'string' || ownerUid === '' || ownerUid !== vaultId) {
-    bad(res, 400, 'vault/owner mismatch (one Vault per user)');
+    sendError(res, 400, 'vault/owner mismatch (one Vault per user)');
     return false;
   }
   return true;
@@ -55,7 +55,7 @@ function checkVaultOwner(vaultId: string, ownerUid: unknown, res: Response): own
 
 function checkText(text: unknown, res: Response): text is string {
   if (typeof text !== 'string' || text.trim() === '' || text.length > MAX_TEXT) {
-    bad(res, 400, `text must be 1..${MAX_TEXT} chars`);
+    sendError(res, 400, `text must be 1..${MAX_TEXT} chars`);
     return false;
   }
   return true;
@@ -78,7 +78,7 @@ function checkHistory(value: unknown, res: Response): value is Turn[] {
         t.text.length > MAX_TEXT,
     )
   ) {
-    bad(res, 400, `history must be <=${MAX_HISTORY} turns of {by: user|model, text: 1..${MAX_TEXT}}`);
+    sendError(res, 400, `history must be <=${MAX_HISTORY} turns of {by: user|model, text: 1..${MAX_TEXT}}`);
     return false;
   }
   return true;
@@ -88,14 +88,14 @@ function checkHistory(value: unknown, res: Response): value is Turn[] {
 function storeError(res: Response, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
   if (/owner mismatch/.test(message)) {
-    bad(res, 403, 'forbidden');
+    sendError(res, 403, 'forbidden');
     return;
   }
   if (/not found/.test(message)) {
-    bad(res, 404, 'entry not found');
+    sendError(res, 404, 'entry not found');
     return;
   }
-  bad(res, 500, 'internal error');
+  sendError(res, 500, 'internal error');
 }
 
 /** Build the frozen snapshot from a cached place record; never crashes on shape. */
@@ -133,7 +133,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
         text,
         placeIds: [],
         groundingSnapshots: [],
-        geminiReflection: null,
+        reflections: [],
         createdAt: new Date().toISOString(),
       });
       res.status(201).json({ id });
@@ -154,7 +154,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
       return;
     }
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      bad(res, 400, 'limit must be an integer 1..100');
+      sendError(res, 400, 'limit must be an integer 1..100');
       return;
     }
     try {
@@ -176,18 +176,18 @@ export function createJournalRouter(deps: JournalDeps): Router {
       return;
     }
     if (typeof placeId !== 'string' || placeId === '' || placeId.length > 256) {
-      bad(res, 400, 'placeId must be 1..256 chars');
+      sendError(res, 400, 'placeId must be 1..256 chars');
       return;
     }
     try {
       const entry = await deps.store.getEntry(vaultId, entryId, ownerUid);
       if (entry === null) {
-        bad(res, 404, 'entry not found');
+        sendError(res, 404, 'entry not found');
         return;
       }
       // Domain freeze rule: the first Reflection seals the Groundings.
-      if (entry.geminiReflection !== null) {
-        bad(res, 409, 'REFUSED: Grounding is frozen — a Reflection already exists.');
+      if (entry.reflections.length > 0) {
+        sendError(res, 409, 'REFUSED: Grounding is frozen — a Reflection already exists.');
         return;
       }
       let record: PlaceCacheRecord;
@@ -196,10 +196,10 @@ export function createJournalRouter(deps: JournalDeps): Router {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (/HTTP 404/.test(message)) {
-          bad(res, 404, 'place not found');
+          sendError(res, 404, 'place not found');
           return;
         }
-        bad(res, 502, 'place lookup failed');
+        sendError(res, 502, 'place lookup failed');
         return;
       }
       const snapshot = snapshotFromCache(placeId, record);
@@ -223,7 +223,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
     try {
       const entry = await deps.store.getEntry(vaultId, entryId, ownerUid);
       if (entry === null) {
-        bad(res, 404, 'entry not found');
+        sendError(res, 404, 'entry not found');
         return;
       }
       let reflection: string;
@@ -231,14 +231,14 @@ export function createJournalRouter(deps: JournalDeps): Router {
         reflection = await reflect(entry.text, entry.groundingSnapshots, deps.gemini, history ?? []);
       } catch (err) {
         if (err instanceof QuotaDepletedError) {
-          bad(res, 429, 'model quota depleted — try again later');
+          sendError(res, 429, 'model quota depleted — try again later');
           return;
         }
         if (err instanceof TransientGeminiError) {
-          bad(res, 502, 'model temporarily unavailable — try again');
+          sendError(res, 502, 'model temporarily unavailable — try again');
           return;
         }
-        bad(res, 500, 'reflection failed');
+        sendError(res, 500, 'reflection failed');
         return;
       }
       await deps.store.saveReflection(vaultId, entryId, ownerUid, reflection);
