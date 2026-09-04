@@ -15,9 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # Skips (green) until the GCP_CREDENTIALS secret exists — no red builds
-    # while the one human step below is still pending.
-    if: ${{ secrets.GCP_CREDENTIALS != '' }}
 
     # Required repo secret (Settings → Secrets → Actions):
     #   GCP_CREDENTIALS — service-account JSON key with roles/run.admin on the
@@ -43,17 +40,31 @@ jobs:
           npm run typecheck --prefix app
           npm run build --prefix app
 
+      # Skips the Cloud steps (green) until GCP_CREDENTIALS exists — the
+      # secrets context is legal in steps.* but not in jobs.<id>.if, and an
+      # invalid job-level guard fails the whole workflow at parse time.
+      - name: Check deploy credentials present
+        id: creds
+        run: |
+          if [ -z "${{ secrets.GCP_CREDENTIALS }}" ]; then
+            echo "GCP_CREDENTIALS not set — skipping Cloud deploy (build above still validates). Add the secret to enable CD."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: auth
+        if: steps.creds.outputs.skip != 'true'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
 
       - name: Set up Cloud SDK
+        if: steps.creds.outputs.skip != 'true'
         uses: google-github-actions/setup-gcloud@v2
 
       # Mirrors cmd.md section 4 (validated syntax) + --max-instances=4 as the
       # billing guardrail. Dockerfile at repo root makes --source . deterministic.
       - name: Deploy to Cloud Run
+        if: steps.creds.outputs.skip != 'true'
         run: >
           gcloud run deploy personal-gemini-journal
           --source .
