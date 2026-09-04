@@ -58,6 +58,11 @@ describe('pure policy helpers', () => {
     assert.equal(VOLATILE_TTL_MS, MS_PER_DAY);
   });
 
+  it('computed expiry never breaches the 30-day ceiling', () => {
+    assert.ok(computeExpiresAt(T0) <= T0 + 30 * MS_PER_DAY);
+    assert.ok(computeExpiresAt(T0, 'volatile') <= T0 + 30 * MS_PER_DAY);
+  });
+
   it('stale is strict: expiresAt == now refetches', () => {
     assert.equal(isStale(T0 - 1, T0), true);
     assert.equal(isStale(T0, T0), true);
@@ -104,12 +109,32 @@ describe('saveEntry / listEntries', () => {
     assert.equal(listed[0]?.text, 'two');
   });
 
+  it('saveEntry creates the parent Vault doc (reads need it)', async () => {
+    const v = freshVault();
+    await store.saveEntry(v, entry());
+    const db = getFirestore();
+    const snap = await db.doc(`vaults/${v}`).get();
+    assert.equal(snap.exists, true);
+    assert.equal((snap.data() as { ownerUid: string }).ownerUid, 'alice');
+  });
+
   it('saveReflection stores text on the entry', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
     await store.saveReflection(v, id, 'alice', 'grounded words');
     const listed = await store.listEntries(v, 'alice', 10);
     assert.equal(listed[0]?.geminiReflection, 'grounded words');
+  });
+
+  it('saveReflection by another owner rejects', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await assert.rejects(store.saveReflection(v, id, 'bob', 'hijack'), /owner mismatch/);
+  });
+
+  it('saveReflection on a missing entry rejects', async () => {
+    const v = freshVault();
+    await assert.rejects(store.saveReflection(v, 'nope', 'alice', 'x'), /not found/);
   });
 });
 

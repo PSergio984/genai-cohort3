@@ -25,6 +25,10 @@ export function createDeps(projectId: string): FirestoreDeps {
   return { db: getFirestore(app, DATABASE_ID) };
 }
 
+function vaultDoc(db: Firestore, vaultId: string) {
+  return db.doc(`vaults/${vaultId}`);
+}
+
 function entriesCol(db: Firestore, vaultId: string) {
   return db.collection(`vaults/${vaultId}/entries`);
 }
@@ -36,6 +40,10 @@ function placeDoc(db: Firestore, vaultId: string, placeId: string) {
 export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
   return {
     async saveEntry(vaultId, entry): Promise<string> {
+      // Parent Vault must exist: the rules' owner check reads it, so an
+      // entry without a parent would be unreadable through client SDKs.
+      // Merge-write is idempotent and never clobbers existing Vault fields.
+      await vaultDoc(db, vaultId).set({ ownerUid: entry.ownerUid }, { merge: true });
       const ref = await entriesCol(db, vaultId).add({ ...entry });
       return ref.id;
     },
@@ -50,7 +58,19 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
       return snap.docs.map((d) => d.data() as EntryRecord);
     },
 
-    async saveReflection(vaultId, entryId, _ownerUid, text): Promise<void> {
+    async saveReflection(vaultId, entryId, ownerUid, text): Promise<void> {
+      // Defense in depth: the Admin SDK bypasses firestore.rules, so the
+      // store verifies ownership itself instead of trusting the caller.
+      // (Owner identity is enforced by the rules on the merged document
+      // for client paths; this guard covers server paths.)
+      const snap = await entriesCol(db, vaultId).doc(entryId).get();
+      const data = snap.data() as EntryRecord | undefined;
+      if (data === undefined) {
+        throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
+      }
+      if (data.ownerUid !== ownerUid) {
+        throw new Error(`owner mismatch: entry belongs to another Vault owner`);
+      }
       // Owner identity is enforced by the rules on the merged document
       // (ownerUid untouched); only the reflection text is written.
       await entriesCol(db, vaultId).doc(entryId).update({ geminiReflection: text });
