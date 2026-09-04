@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE (throwaway) — Place-grounded entry flow</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #222; line-height: 1.5; }
+  .banner { background: #fff3cd; border: 2px dashed #b58900; padding: 0.75rem 1rem; margin-bottom: 1.5rem; }
+  .panel { background: #f6f6f4; border: 1px solid #ccc; padding: 1rem; margin: 1rem 0; }
+  .changed { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 0.5rem 1rem; margin: 1rem 0; }
+  .refused { background: #fdecea; border-left: 4px solid #b71c1c; padding: 0.5rem 1rem; margin: 1rem 0; }
+  button { margin: 0.2rem; padding: 0.45rem 0.8rem; cursor: pointer; }
+  button:disabled { cursor: not-allowed; opacity: 0.45; }
+  .tabs button.active { background: #1a56db; color: #fff; }
+  .tabpage { display: none; border: 1px solid #ccc; padding: 1rem; margin-top: 0.5rem; }
+  .tabpage.active { display: block; }
+  .step-btn.done { background: #e8f5e9; }
+  input[type=text] { width: 70%; padding: 0.45rem; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+  .mock { font-style: italic; color: #555; }
+  code { background: #eee; padding: 0 0.3rem; }
+</style>
+</head>
+<body>
+
+<div class="banner"><strong>THROWAWAY PROTOTYPE — not production.</strong>
+Question being answered: does the place-grounded flow feel right? Write an <em>Entry</em> →
+attach a <em>Place</em> (creates a <em>Grounding</em>) → <em>Reflect</em> (Gemini reply, mocked
+here by a hand-written stand-in) → follow-up <em>Turns</em> in the same <em>Session</em>.
+Rules under test: Grounding editable until first Reflection, then frozen; many Reflections
+per Entry allowed; several Groundings per Entry allowed; ungrounded Entries legal.</div>
+
+<h1>Place-grounded entry flow — logic demo</h1>
+<p>Drive the state machine with the buttons. Everything runs in memory; Places and
+Reflections are <span class="mock">hand-written mocks</span> (no API calls, no keys).</p>
+
+<h2>Current state</h2>
+<div id="notice"></div>
+<div class="panel" id="state"></div>
+
+<h2>Free play</h2>
+<div>
+  <input type="text" id="entryInput" value="I walked here today feeling stuck.">
+  <button onclick="doWrite()">Write Entry (new Session)</button>
+</div>
+<div>
+  <button onclick="doAttach('rizal_park')">Attach: Rizal Park</button>
+  <button onclick="doAttach('escolta_cafe')">Attach: Escolta Cafe</button>
+  <button onclick="doAttach('unknown_place')">Attach: unknown place</button>
+  <button onclick="doRemove()">Remove last Grounding</button>
+</div>
+<div>
+  <button onclick="doReflect()">Reflect (on demand)</button>
+  <button onclick="doFollowUp()">Follow-up Turn: “what about the lake there?”</button>
+</div>
+
+<h2>Guided walkthroughs</h2>
+<div class="tabs" id="tabs"></div>
+<div id="pages"></div>
+
+<script>
+// ---------- Pure module (no DOM in here; liftable). ----------
+const Journal = (() => {
+  const PLACES = {
+    rizal_park: { place_id: 'ChIJRIZALPARK', name: 'Rizal Park', address: 'Manila, Philippines',
+      facts: 'historic urban park, open lawns, quiet mornings before 8am', attributions: 'Powered by Google' },
+    escolta_cafe: { place_id: 'ChIJESCOLTACAFE', name: 'Escolta Cafe', address: 'Escolta St, Manila',
+      facts: 'heritage-district cafe, strong espresso, closes 9pm', attributions: 'Powered by Google' }
+  };
+  let clock = 0;
+  const tick = () => 'T' + (++clock);
+
+  function newSession(entryText) {
+    return { vault: 'vault-user-1', entryText, groundings: [], turns: [], reflected: false };
+  }
+  function attachPlace(s, placeId) {
+    if (!s) return { s, msg: 'Write an Entry first.', ok: false };
+    if (s.reflected) return { s, msg: 'REFUSED: Grounding is frozen — a Reflection already exists. (Rule under test.)', ok: false };
+    const p = PLACES[placeId];
+    if (!p) return { s, msg: 'No such place — picker found nothing. Entry stays ungrounded.', ok: false };
+    if (s.groundings.some(g => g.place_id === p.place_id)) return { s, msg: p.name + ' is already attached.', ok: false };
+    s.groundings.push({ place_id: p.place_id, name: p.name, address: p.address, attributions: p.attributions, fetchedAt: tick() });
+    return { s, msg: 'Grounding created for ' + p.name + ' (editable until first Reflection).', ok: true };
+  }
+  function removeGrounding(s) {
+    if (!s) return { s, msg: 'Write an Entry first.', ok: false };
+    if (s.reflected) return { s, msg: 'REFUSED: Grounding is frozen — a Reflection already exists.', ok: false };
+    const g = s.groundings.pop();
+    return { s, msg: g ? 'Removed Grounding for ' + g.name + '.' : 'Nothing attached — Entry is (still) ungrounded.', ok: !!g };
+  }
+  function mockReflection(s) {
+    if (s.groundings.length === 0)
+      return '[MOCK Reflection, ungrounded] That grey feeling is real even without a reason. No place context was attached, so this stays general: name one small thing you can see from where you sit.';
+    const cites = s.groundings.map(g => {
+      const p = Object.values(PLACES).find(p => p.place_id === g.place_id);
+      return g.name + ' (' + (p ? p.facts : 'no cached facts') + ')';
+    }).join(' AND ');
+    return '[MOCK Reflection, grounded in: ' + cites + '] Stuck loosens outdoors: try a slow loop where it is quietest, then sit with one question for ten minutes. What part of “stuck” feels heaviest right here?';
+  }
+  function reflect(s) {
+    if (!s) return { s, msg: 'Write an Entry first.', ok: false };
+    const r = mockReflection(s);
+    s.turns.push({ by: 'model', text: r });
+    s.reflected = true;
+    return { s, msg: 'Reflection recorded (Reflection #' + s.turns.filter(t => t.by === 'model').length + ' on this Entry). Grounding is now FROZEN.', ok: true };
+  }
+  function followUp(s, text) {
+    if (!s) return { s, msg: 'Write an Entry first.', ok: false };
+    s.turns.push({ by: 'user', text });
+    return { s, msg: 'Follow-up Turn recorded (a Turn, not an Entry). Press Reflect for the next Reflection.', ok: true };
+  }
+  return { PLACES, newSession, attachPlace, removeGrounding, reflect, followUp };
+})();
+
+// ---------- Thin page shell over the pure module. ----------
+let S = null, lastMsg = '', lastOk = true;
+const $ = id => document.getElementById(id);
+
+function render() {
+  const n = $('notice');
+  n.className = lastMsg ? (lastOk ? 'changed' : 'refused') : '';
+  n.textContent = lastMsg;
+  const el = $('state');
+  if (!S) { el.innerHTML = '<em>No Session yet — write an Entry to begin.</em>'; return; }
+  el.innerHTML =
+    '<div><strong>Vault:</strong> <code>' + S.vault + '</code> (private to you)</div>' +
+    '<div><strong>Entry:</strong> “' + escapeHtml(S.entryText) + '”</div>' +
+    '<div><strong>Groundings (' + S.groundings.length + '):</strong> ' +
+      (S.groundings.map(g => '<code>' + g.name + '</code> @' + g.fetchedAt).join(', ') || '<em>none — ungrounded</em>') + '</div>' +
+    '<div><strong>Frozen:</strong> ' + (S.reflected ? 'YES (re-grounding refused)' : 'no (Groundings editable)') + '</div>' +
+    '<div><strong>Turns (' + S.turns.length + '):</strong><ol>' +
+      S.turns.map(t => '<li><strong>' + t.by + ':</strong> ' + escapeHtml(t.text) + '</li>').join('') + '</ol></div>';
+}
+function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function apply(res) { S = res.s; lastMsg = res.msg; lastOk = res.ok; render(); }
+
+function doWrite() { S = Journal.newSession($('entryInput').value || '(empty)'); lastMsg = 'New Session started with your Entry.'; lastOk = true; render(); }
+function doAttach(id) { apply(Journal.attachPlace(S, id)); }
+function doRemove() { apply(Journal.removeGrounding(S)); }
+function doReflect() { apply(Journal.reflect(S)); }
+function doFollowUp() { apply(Journal.followUp(S, 'what about the lake there?')); }
+
+const WALKS = [
+  { id: 'happy', title: 'Happy path (grounded)', desc: 'Write → attach Rizal Park → reflect. Watch the freeze engage.',
+    steps: [['Write Entry', doWrite], ['Attach Rizal Park', () => doAttach('rizal_park')], ['Reflect', doReflect]] },
+  { id: 'ungrounded', title: 'Ungrounded entry', desc: 'Reflect with no Place attached. Un grounded must stay legal and general.',
+    steps: [['Write Entry', doWrite], ['Reflect (no place)', doReflect]] },
+  { id: 'wrongplace', title: 'Wrong place, then freeze', desc: 'Attach Escolta, remove it before reflecting (allowed), attach Rizal, reflect, then try to change it (refused).',
+    steps: [['Write Entry', doWrite], ['Attach Escolta Cafe', () => doAttach('escolta_cafe')], ['Remove it (allowed)', doRemove], ['Attach Rizal Park', () => doAttach('rizal_park')], ['Reflect', doReflect], ['Try re-ground (refused)', () => doAttach('escolta_cafe')]] },
+  { id: 'twolaces', title: 'Same entry, two places (scoring demo)', desc: 'Attach BOTH places, then reflect once: the mock cites both. This is the “could only have been written HERE” story.',
+    steps: [['Write Entry', doWrite], ['Attach Rizal Park', () => doAttach('rizal_park')], ['Attach Escolta Cafe', () => doAttach('escolta_cafe')], ['Reflect', doReflect], ['Follow-up Turn', doFollowUp], ['Reflect again (2nd Reflection)', doReflect]] }
+];
+function buildTabs() {
+  const tabs = $('tabs'), pages = $('pages');
+  WALKS.forEach((w, i) => {
+    const b = document.createElement('button');
+    b.textContent = w.title; if (i === 0) b.classList.add('active');
+    b.onclick = () => {
+      document.querySelectorAll('#tabs button').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.tabpage').forEach(x => x.classList.remove('active'));
+      b.classList.add('active'); document.getElementById('page-' + w.id).classList.add('active');
+      S = null; lastMsg = 'Walkthrough reset — press the steps in order.'; lastOk = true; render();
+      document.querySelectorAll('#page-' + w.id + ' .step-btn').forEach(x => x.classList.remove('done'));
+    };
+    tabs.appendChild(b);
+    const pg = document.createElement('div');
+    pg.className = 'tabpage' + (i === 0 ? ' active' : ''); pg.id = 'page-' + w.id;
+    pg.innerHTML = '<p>' + w.desc + '</p>';
+    w.steps.forEach(([label, fn], si) => {
+      const sb = document.createElement('button');
+      sb.className = 'step-btn'; sb.textContent = (si + 1) + '. ' + label;
+      sb.onclick = () => { fn(); sb.classList.add('done'); };
+      pg.appendChild(sb);
+    });
+    pages.appendChild(pg);
+  });
+}
+buildTabs(); render();
+</script>
+</body>
+</html>
