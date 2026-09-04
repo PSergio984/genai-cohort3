@@ -31,13 +31,13 @@ Result 2026-09-04: SDK 583.0.0; config project `valid-meridian-475214-e3`, accou
 ## 1. Setup — Enable APIs
 
 ```bash
-# REQUIRES explicit human approval per gcloud skill denylist (no proactive API enabling) — NOT yet run:
-gcloud services enable run.googleapis.com firestore.googleapis.com secretmanager.googleapis.com cloudbuild.googleapis.com --project=$PROJECT_ID --quiet
+# secretmanager enable APPROVED by human 2026-09-04 (see task ticket) — RAN, but BLOCKED on billing (see Result):
+gcloud services enable secretmanager.googleapis.com --project=$PROJECT_ID --quiet
 # Safe read-only check (data-reduced, one service per call):
 gcloud services list --enabled --filter="config.name:run.googleapis.com" --format="value(config.name)" --project=$PROJECT_ID --quiet
 ```
 
-Result 2026-09-04: `run` ENABLED, `firestore` ENABLED, `cloudbuild` ENABLED; `secretmanager` NOT enabled — enabling it needs your explicit go-ahead (denylist). Do NOT run the enable line until approved.
+Result 2026-09-04: `run` ENABLED, `firestore` ENABLED, `cloudbuild` ENABLED; `secretmanager` STILL DISABLED — enable returned `FAILED_PRECONDITION: Billing account for project '273533786531' is not open (UREQ_PROJECT_BILLING_NOT_OPEN)`. Secret Manager requires an open billing account, and `gcloud billing *` is denylisted (financial risk) — attaching billing is a console HITL step. Checklist: (1) attach/open billing for `valid-meridian-475214-e3` in Cloud Console → Billing, (2) re-run the enable line above, (3) verify with the filtered list check. Do NOT run other enables until approved.
 
 ---
 
@@ -94,4 +94,5 @@ gcloud logging read "resource.type=cloud_run_revision" --limit 20 --project=$PRO
 - `2026-09-04T15:00Z` — `gcloud --version` — not found (issue #5) — PATH fix pending in #10
 - `2026-09-04T15:30Z` — scaffold created from research branches #2, #3, #4, #5 — see https://github.com/PSergio984/genai-cohort3/issues/1
 - `2026-09-04T16:00Z` — task resolution: SDK found at `C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd` (583.0.0, on Machine PATH; shell refresh fixes `where.exe` miss). Validated `help run deploy | secrets create | firestore databases create | run services describe`. `config list` → project `valid-meridian-475214-e3` / `eric.manabatseam@gmail.com`; `projects describe` → ACTIVE. Enabled: run, firestore, cloudbuild; DISABLED: secretmanager (needs approval). DB `coffee-menu` exists; services `bq-data-agent, coffee-barista, coffee-mgr-agent`. No writes executed (enable/IAM/create/deploy all gated). Sections 0-5 corrected to validated syntax.
+- `2026-09-04T16:20Z` — secretmanager enable APPROVED then attempted: `gcloud services enable secretmanager.googleapis.com --project=valid-meridian-475214-e3 --quiet` → FAILED_PRECONDITION UREQ_PROJECT_BILLING_NOT_OPEN (no open billing account on 273533786531). API still disabled; secrets create + IAM bindings stay gated behind (1) billing attach (console HITL), (2) enable re-run. See Task: Enable Secret Manager API + stage Maps/Gemini secrets.
 
