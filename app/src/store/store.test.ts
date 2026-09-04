@@ -77,7 +77,8 @@ describe('saveEntry / listEntries', () => {
     assert.ok(typeof id === 'string' && id.length > 0);
     const listed = await store.listEntries(v, 'alice', 10);
     assert.equal(listed.length, 1);
-    assert.equal(listed[0]?.text, 'hello');
+    assert.equal(listed[0]?.id, id);
+    assert.equal(listed[0]?.entry.text, 'hello');
   });
 
   it('lists newest-first', async () => {
@@ -86,7 +87,7 @@ describe('saveEntry / listEntries', () => {
     await store.saveEntry(v, entry({ text: 'new', createdAt: iso(T0 + 1000) }));
     const listed = await store.listEntries(v, 'alice', 10);
     assert.deepEqual(
-      listed.map((e) => e.text),
+      listed.map((e) => e.entry.text),
       ['new', 'old'],
     );
   });
@@ -94,10 +95,86 @@ describe('saveEntry / listEntries', () => {
   it('filters by ownerUid', async () => {
     const v = freshVault();
     await store.saveEntry(v, entry({ ownerUid: 'alice', text: 'a' }));
-    await store.saveEntry(v, entry({ ownerUid: 'bob', text: 'b' }));
+    const listed = await store.listEntries(v, 'bob', 10);
+    assert.equal(listed.length, 0);
+  });
+
+  it('saveEntry into another owner vault rejects', async () => {
+    const v = freshVault();
+    await store.saveEntry(v, entry({ ownerUid: 'alice', text: 'a' }));
+    await assert.rejects(store.saveEntry(v, entry({ ownerUid: 'bob', text: 'b' })), /owner mismatch/);
+  });
+
+  it('saveEntry preserves existing Vault fields (no clobber)', async () => {
+    const v = freshVault();
+    await store.saveEntry(v, entry({ ownerUid: 'alice', text: 'a' }));
+    await store.saveEntry(v, entry({ ownerUid: 'alice', text: 'b' }));
+    const db = getFirestore();
+    const snap = await db.doc(`vaults/${v}`).get();
+    assert.equal((snap.data() as { ownerUid: string }).ownerUid, 'alice');
+  });
+
+  it('appendGrounding stores snapshot + placeId', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await store.appendGrounding(v, id, 'alice', {
+      placeId: 'ChIJX',
+      name: 'Rizal Park',
+      address: 'Manila',
+      attributions: 'Powered by Google',
+      fetchedAt: iso(T0),
+    });
     const listed = await store.listEntries(v, 'alice', 10);
-    assert.equal(listed.length, 1);
-    assert.equal(listed[0]?.text, 'a');
+    assert.deepEqual(listed[0]?.entry.placeIds, ['ChIJX']);
+    assert.equal(listed[0]?.entry.groundingSnapshots.length, 1);
+    assert.equal(listed[0]?.entry.groundingSnapshots[0]?.name, 'Rizal Park');
+  });
+
+  it('appendGrounding is idempotent on placeId', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    const snap = {
+      placeId: 'ChIJX',
+      name: 'Rizal Park',
+      address: 'Manila',
+      attributions: 'Powered by Google',
+      fetchedAt: iso(T0),
+    };
+    await store.appendGrounding(v, id, 'alice', snap);
+    await store.appendGrounding(v, id, 'alice', snap);
+    const listed = await store.listEntries(v, 'alice', 10);
+    assert.deepEqual(listed[0]?.entry.placeIds, ['ChIJX']);
+    assert.equal(listed[0]?.entry.groundingSnapshots.length, 1);
+  });
+
+  it('appendGrounding by another owner rejects', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await assert.rejects(
+      store.appendGrounding(v, id, 'bob', {
+        placeId: 'ChIJX',
+        name: 'X',
+        address: '',
+        attributions: '',
+        fetchedAt: iso(T0),
+      }),
+      /owner mismatch/,
+    );
+  });
+
+  it('appendGrounding on a missing entry rejects', async () => {
+    const v = freshVault();
+    await store.saveEntry(v, entry());
+    await assert.rejects(
+      store.appendGrounding(v, 'nope', 'alice', {
+        placeId: 'ChIJX',
+        name: 'X',
+        address: '',
+        attributions: '',
+        fetchedAt: iso(T0),
+      }),
+      /not found/,
+    );
   });
 
   it('respects limit', async () => {
@@ -106,7 +183,7 @@ describe('saveEntry / listEntries', () => {
     await store.saveEntry(v, entry({ text: 'two', createdAt: iso(T0 + 1000) }));
     const listed = await store.listEntries(v, 'alice', 1);
     assert.equal(listed.length, 1);
-    assert.equal(listed[0]?.text, 'two');
+    assert.equal(listed[0]?.entry.text, 'two');
   });
 
   it('saveEntry creates the parent Vault doc (reads need it)', async () => {
@@ -118,12 +195,26 @@ describe('saveEntry / listEntries', () => {
     assert.equal((snap.data() as { ownerUid: string }).ownerUid, 'alice');
   });
 
+  it('getEntry returns the record for the owner', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry({ text: 'mine' }));
+    const got = await store.getEntry(v, id, 'alice');
+    assert.equal(got?.text, 'mine');
+  });
+
+  it('getEntry is null for missing ids and foreign owners alike', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    assert.equal(await store.getEntry(v, 'nope', 'alice'), null);
+    assert.equal(await store.getEntry(v, id, 'bob'), null);
+  });
+
   it('saveReflection stores text on the entry', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
     await store.saveReflection(v, id, 'alice', 'grounded words');
     const listed = await store.listEntries(v, 'alice', 10);
-    assert.equal(listed[0]?.geminiReflection, 'grounded words');
+    assert.equal(listed[0]?.entry.geminiReflection, 'grounded words');
   });
 
   it('saveReflection by another owner rejects', async () => {

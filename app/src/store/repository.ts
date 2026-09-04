@@ -47,13 +47,30 @@ export interface FetchedPlace {
   readonly fetchedAtMs: number;
 }
 
+export interface EntryRef {
+  readonly id: string;
+  readonly entry: EntryRecord;
+}
+
 export interface JournalStore {
-  /** Persist an Entry; returns the new entry id. */
+  /** Persist an Entry; returns the new entry id. Creates the parent Vault on first use, rejects on owner mismatch. */
   saveEntry(vaultId: string, entry: EntryRecord): Promise<string>;
-  /** Newest-first history for one Vault (single indexed query). */
-  listEntries(vaultId: string, ownerUid: string, limit: number): Promise<EntryRecord[]>;
+  /** Newest-first history for one Vault (single indexed query), with ids for pins and follow-up calls. */
+  listEntries(vaultId: string, ownerUid: string, limit: number): Promise<EntryRef[]>;
+  /** Read one Entry; null when missing OR owned by someone else (no oracle). */
+  getEntry(vaultId: string, entryId: string, ownerUid: string): Promise<EntryRecord | null>;
   /** Append a Reflection text to an Entry. */
   saveReflection(vaultId: string, entryId: string, ownerUid: string, text: string): Promise<void>;
+  /**
+   * Append a frozen Grounding snapshot to an Entry (idempotent on placeId).
+   * Verifies entry ownership first — the Admin SDK bypasses firestore.rules.
+   */
+  appendGrounding(
+    vaultId: string,
+    entryId: string,
+    ownerUid: string,
+    snapshot: GroundingSnapshot,
+  ): Promise<void>;
   /**
    * Read-through place cache: fresh hit returns stored data without calling
    * `fetch`; stale or missing entries fetch, persist with backend-computed

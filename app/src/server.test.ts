@@ -7,8 +7,12 @@ import { createApp } from './server.js';
 
 describe('server', () => {
   let server: Server | undefined;
-  after(() => {
-    server?.close();
+  after(async () => {
+    if (server !== undefined) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server?.close(() => resolve()));
+      server = undefined;
+    }
   });
 
   it('answers /api/health 200 with service identity and no x-powered-by', async () => {
