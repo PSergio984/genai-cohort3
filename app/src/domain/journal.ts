@@ -11,11 +11,7 @@ export interface PlaceSnapshot {
   readonly attributions: string;
 }
 
-export interface Grounding {
-  readonly placeId: string;
-  readonly name: string;
-  readonly address: string;
-  readonly attributions: string;
+export interface Grounding extends PlaceSnapshot {
   readonly fetchedAt: string;
 }
 
@@ -43,7 +39,8 @@ export function createSession(vault: string, entryText: string): SessionState {
 
 /**
  * Attach a Place resolved by the picker (Maps seam). `place: null` means the
- * picker found nothing — the Entry stays ungrounded, never an error state.
+ * picker found nothing — a successful no-op: the Entry stays ungrounded,
+ * which the spec defines as never an error state.
  */
 export function attachPlace(
   state: SessionState,
@@ -51,7 +48,7 @@ export function attachPlace(
   fetchedAt: string,
 ): Outcome {
   if (place === null) {
-    return { ok: false, state, message: 'No such place — picker found nothing. Entry stays ungrounded.' };
+    return { ok: true, state, message: 'No such place — picker found nothing. Entry stays ungrounded.' };
   }
   if (state.frozen) {
     return { ok: false, state, message: 'REFUSED: Grounding is frozen — a Reflection already exists.' };
@@ -75,10 +72,22 @@ export function removeLastGrounding(state: SessionState): Outcome {
   if (last === undefined) {
     return { ok: false, state, message: 'Nothing attached — Entry is (still) ungrounded.' };
   }
+  return removeGrounding(state, last.placeId);
+}
+
+/** Remove one Grounding by place id (fixes a wrong pick among several). */
+export function removeGrounding(state: SessionState, placeId: string): Outcome {
+  if (state.frozen) {
+    return { ok: false, state, message: 'REFUSED: Grounding is frozen — a Reflection already exists.' };
+  }
+  const target = state.groundings.find((g) => g.placeId === placeId);
+  if (target === undefined) {
+    return { ok: false, state, message: 'That Place is not attached — nothing removed.' };
+  }
   return {
     ok: true,
-    state: { ...state, groundings: state.groundings.slice(0, -1) },
-    message: `Removed Grounding for ${last.name}.`,
+    state: { ...state, groundings: state.groundings.filter((g) => g.placeId !== placeId) },
+    message: `Removed Grounding for ${target.name}.`,
   };
 }
 

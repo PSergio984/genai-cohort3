@@ -7,6 +7,7 @@ import {
   createSession,
   attachPlace,
   removeLastGrounding,
+  removeGrounding,
   recordReflection,
   recordTurn,
   reflectionCount,
@@ -51,11 +52,12 @@ describe('attachPlace', () => {
     assert.equal(r.state.frozen, false);
   });
 
-  it('null place keeps the entry ungrounded without failing the session', () => {
+  it('null place keeps the entry ungrounded as a successful no-op', () => {
     const s = fresh();
     const r = attachPlace(s, null, T0);
-    assert.equal(r.ok, false);
+    assert.equal(r.ok, true);
     assert.equal(r.state.groundings.length, 0);
+    assert.equal(r.state.frozen, false);
   });
 
   it('duplicate attach is refused', () => {
@@ -106,12 +108,27 @@ describe('removeLastGrounding', () => {
     assert.equal(r.state.groundings.length, 1);
   });
 
-  it('removing twice with two places keeps the first', () => {
+  it('removing an unknown place id removes nothing', () => {
+    const s = attachPlace(fresh(), RIZAL, T0).state;
+    const r = removeGrounding(s, 'ChIJNOPE');
+    assert.equal(r.ok, false);
+    assert.equal(r.state.groundings.length, 1);
+  });
+
+  it('removing one of two places by id keeps the other', () => {
     let s = attachPlace(fresh(), RIZAL, T0).state;
     s = attachPlace(s, CAFE, T0).state;
-    s = removeLastGrounding(s).state;
-    assert.equal(s.groundings.length, 1);
-    assert.equal(s.groundings[0]?.placeId, RIZAL.placeId);
+    const r = removeGrounding(s, RIZAL.placeId);
+    assert.equal(r.ok, true);
+    assert.equal(r.state.groundings.length, 1);
+    assert.equal(r.state.groundings[0]?.placeId, CAFE.placeId);
+  });
+
+  it('id-targeted removal after freeze is refused', () => {
+    const s = recordReflection(attachPlace(fresh(), RIZAL, T0).state, 'r1').state;
+    const r = removeGrounding(s, RIZAL.placeId);
+    assert.equal(r.ok, false);
+    assert.equal(r.state.groundings.length, 1);
   });
 
   it('re-attaching after removal works (editability cycle)', () => {
