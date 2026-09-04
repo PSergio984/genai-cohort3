@@ -1,0 +1,65 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+# One deploy at a time — overlapping Cloud Run revisions cause confusion.
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build + deploy to Cloud Run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    # Required repo secret (Settings → Secrets → Actions):
+    #   GCP_CREDENTIALS — service-account JSON key with roles/run.admin on the
+    #   project + roles/iam.serviceAccountUser on the runtime SA below.
+    #   (Workload Identity Federation is the nicer long-term option.)
+    # No app secrets needed here: GEMINI/MAPS keys already live in Secret
+    # Manager and mount at deploy time (see cmd.md section 3).
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install + typecheck + build production bundle
+        run: |
+          npm ci --prefix app
+          npm run typecheck --prefix app
+          npm run build --prefix app
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Mirrors cmd.md section 4 (validated syntax) + --max-instances=4 as the
+      # billing guardrail. Dockerfile at repo root makes --source . deterministic.
+      - name: Deploy to Cloud Run
+        run: >
+          gcloud run deploy personal-gemini-journal
+          --source .
+          --region us-central1
+          --allow-unauthenticated
+          --update-secrets=/secrets/maps-api-key=maps-api-key:latest
+          --set-secrets=GEMINI_API_KEY=gemini-api-key:latest
+          --service-account=273533786531-compute@developer.gserviceaccount.com
+          --labels=challenge=codelab,app=grounded-journal
+          --max-instances=4
+          --project=valid-meridian-475214-e3
+          --quiet

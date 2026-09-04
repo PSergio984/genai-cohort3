@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+jobs:
+  app:
+    name: App (typecheck + unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install app deps
+        run: npm ci --prefix app
+
+      - name: Typecheck
+        run: npm run typecheck --prefix app
+
+      - name: Set up Java (Firestore emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Full app suite (domain + server + store, under emulator)
+        run: |
+          npx -y firebase-tools@latest emulators:exec \
+            --only firestore --project=demo-grounded-journal \
+            "npm test --prefix app"
+
+  rules:
+    name: Rules (emulator matrix)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/firestore/package-lock.json
+
+      - name: Set up Java (Firestore emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install rules-test deps
+        run: npm ci --prefix tests/firestore
+
+      - name: Rules behavior matrix
+        run: |
+          npx -y firebase-tools@latest emulators:exec \
+            --only firestore --project=demo-grounded-journal \
+            "npm test --prefix tests/firestore"
+
+  parity:
+    name: Parity (README↔cmd.md)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Drift + deploy-shape check
+        run: node tests/parity.mjs
