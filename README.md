@@ -31,6 +31,11 @@ gcloud config list --format=json --quiet
 # 4. Rules tests (local emulator, no cloud, no keys)
 npx -y firebase-tools@latest emulators:exec --only firestore --project=demo-grounded-journal "npm test --prefix tests/firestore"
 node tests/parity.mjs   # README↔cmd.md drift check
+
+# 5. App (domain core + server)
+npm install --prefix app
+npm run typecheck --prefix app
+npm test --prefix app        # unit tests (Journal reducer + server boundary)
 ```
 
 Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./cmd.md)
