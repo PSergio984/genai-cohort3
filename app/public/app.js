@@ -57,7 +57,7 @@ function postJson(path, payload) {
 byId('signin').addEventListener('click', async function () {
   try {
     await signInWithPopup(auth, provider);
-  } catch (err) { alert('Sign-in failed: ' + err.message); }
+  } catch (err) { alert('Sign-in failed [' + (err.code || 'unknown') + ']: ' + err.message); }
 });
 
 byId('signout').addEventListener('click', async function () {
