@@ -2,6 +2,7 @@
 // seams. Not imported by tests. Missing keys degrade visibly (health only),
 // never crash the boot — the container must stay prob-able.
 import { createApp } from './server.js';
+import { createAdminVerifier } from './auth.js';
 import { resolveGeminiKey, resolveMapsKey } from './config.js';
 import { createPlaceFetcher } from './places/places.js';
 import { createSdkClient } from './gemini/client.js';
@@ -10,7 +11,7 @@ import type { JournalDeps } from './routes/journal.js';
 
 const port = Number(process.env.PORT ?? 8080);
 
-function wireJournal(): { journal?: JournalDeps; placesApiKey?: string } {
+function wireJournal(): { journal?: JournalDeps; placesApiKey?: string; verify?: ReturnType<typeof createAdminVerifier> } {
   const projectId = process.env.PROJECT_ID;
   const mapsKey = resolveMapsKey();
   const geminiKey = resolveGeminiKey();
@@ -29,9 +30,11 @@ function wireJournal(): { journal?: JournalDeps; placesApiKey?: string } {
   }
   const store = createFirestoreStore(createDeps(projectId));
   const fetchPlace = createPlaceFetcher(mapsKey);
+  const verify = createAdminVerifier();
   return {
-    journal: { store, fetchPlace, gemini: createSdkClient({ apiKey: geminiKey }) },
+    journal: { store, fetchPlace, gemini: createSdkClient({ apiKey: geminiKey }), verify },
     placesApiKey: mapsKey,
+    verify,
   };
 }
 

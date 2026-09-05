@@ -5,12 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createJournalRouter, type JournalDeps } from './routes/journal.js';
 import { createPlacesRouter } from './routes/places.js';
+import type { TokenVerifier } from './auth.js';
 
 export interface AppDeps {
-  readonly journal?: JournalDeps;
+  readonly journal?: Omit<JournalDeps, 'verify'>;
   /** Server Maps key for proxied autocomplete; absent mounts nothing. */
   readonly placesApiKey?: string;
   readonly placesFetchImpl?: typeof fetch;
+  /** Required when any API mounts: Firebase ID-token verifier. */
+  readonly verify?: TokenVerifier;
 }
 
 export function createApp(deps?: AppDeps): Express {
@@ -23,13 +26,17 @@ export function createApp(deps?: AppDeps): Express {
   app.get('/api/health', (_req: Request, res: Response) => {
     res.status(200).json({ status: 'ok', service: 'grounded-journal' });
   });
-  // Journal API mounts only when fully wired; otherwise those paths 404 and
-  // health still answers (graceful degradation, e.g. keys not yet staged).
-  if (deps?.journal !== undefined) {
-    app.use('/api/vaults', createJournalRouter(deps.journal));
+  // Journal API mounts only when fully wired (store + fetch + model + auth);
+  // otherwise those paths 404 and health still answers (graceful degradation,
+  // e.g. keys not yet staged).
+  if (deps?.journal !== undefined && deps.verify !== undefined) {
+    app.use('/api/vaults', createJournalRouter({ ...deps.journal, verify: deps.verify }));
   }
-  if (deps?.placesApiKey !== undefined) {
-    app.use('/api/places', createPlacesRouter({ apiKey: deps.placesApiKey, fetchImpl: deps.placesFetchImpl }));
+  if (deps?.placesApiKey !== undefined && deps.verify !== undefined) {
+    app.use(
+      '/api/places',
+      createPlacesRouter({ apiKey: deps.placesApiKey, fetchImpl: deps.placesFetchImpl, verify: deps.verify }),
+    );
   }
   // Static frontend (no build step): index + app.js + styles.css.
   const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');

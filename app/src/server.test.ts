@@ -36,6 +36,7 @@ describe('server', () => {
     const html = await res.text();
     assert.ok(html.includes('Grounded Journal'));
     assert.ok(html.includes('/app.js'));
+    assert.ok(html.includes('Sign in with Google'));
   });
 
   it('serves frontend assets', async () => {

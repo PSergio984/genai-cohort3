@@ -4,11 +4,12 @@
 // persistence in the store, prompts in gemini/. Depends on seam interfaces,
 // never on firebase-admin, the Places wire, or the Gen AI SDK directly.
 //
-// Auth note: callers prove ownership with `ownerUid`, which must equal the
-// Vault id (one Vault per user, CONTEXT.md). Firebase ID-token verification
-// is the next slice; until then the store re-verifies ownership on every
-// write (defense in depth — the Admin SDK bypasses firestore.rules).
+// Auth: every route sits behind requireAuth (Firebase ID token → uid).
+// Callers address only their own Vault (vaultId === uid); the store
+// re-verifies ownership on every write (defense in depth — the Admin SDK
+// bypasses firestore.rules).
 import { Router, type Request, type Response } from 'express';
+import { requireAuth, type TokenVerifier } from '../auth.js';
 import type { IGeminiClient } from '../gemini/client.js';
 import { QuotaDepletedError, TransientGeminiError } from '../gemini/client.js';
 import { reflect } from '../gemini/reflector.js';
@@ -26,6 +27,7 @@ export interface JournalDeps {
   /** Place resolution honoring the store cache (production: store.getPlace + CORE fetch). */
   readonly fetchPlace: (placeId: string, sessionToken?: string) => Promise<FetchedPlace>;
   readonly gemini: IGeminiClient;
+  readonly verify: TokenVerifier;
 }
 
 const MAX_TEXT = 5000;
@@ -44,9 +46,9 @@ function pathParam(res: Response, value: unknown, name: string): string | undefi
   return value;
 }
 
-/** One Vault per user: the path vault and the claimed owner must agree. */
-function checkVaultOwner(vaultId: string, ownerUid: unknown, res: Response): ownerUid is string {
-  if (typeof ownerUid !== 'string' || ownerUid === '' || ownerUid !== vaultId) {
+/** One Vault per user: the path vault must be the authenticated caller's. */
+function checkVault(res: Response, vaultId: string, req: Request): req is Request & { ownerUid: string } {
+  if (req.ownerUid === undefined || req.ownerUid !== vaultId) {
     sendError(res, 400, 'vault/owner mismatch (one Vault per user)');
     return false;
   }
@@ -117,19 +119,20 @@ export function snapshotFromCache(placeId: string, record: PlaceCacheRecord): Gr
 
 export function createJournalRouter(deps: JournalDeps): Router {
   const router = Router();
+  router.use(requireAuth(deps.verify));
 
   router.post('/:vaultId/entries', async (req: Request, res: Response) => {
     const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
-    if (vaultId === undefined) {
+    if (vaultId === undefined || !checkVault(res, vaultId, req)) {
       return;
     }
-    const { ownerUid, text } = req.body as { ownerUid?: unknown; text?: unknown };
-    if (!checkVaultOwner(vaultId, ownerUid, res) || !checkText(text, res)) {
+    const { text } = req.body as { text?: unknown };
+    if (!checkText(text, res)) {
       return;
     }
     try {
       const id = await deps.store.saveEntry(vaultId, {
-        ownerUid,
+        ownerUid: req.ownerUid,
         text,
         placeIds: [],
         groundingSnapshots: [],
@@ -144,21 +147,17 @@ export function createJournalRouter(deps: JournalDeps): Router {
 
   router.get('/:vaultId/entries', async (req: Request, res: Response) => {
     const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
-    if (vaultId === undefined) {
+    if (vaultId === undefined || !checkVault(res, vaultId, req)) {
       return;
     }
-    const ownerUid = req.query.ownerUid;
     const rawLimit = req.query.limit;
     const limit = rawLimit === undefined ? 20 : Number(rawLimit);
-    if (!checkVaultOwner(vaultId, ownerUid, res)) {
-      return;
-    }
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       sendError(res, 400, 'limit must be an integer 1..100');
       return;
     }
     try {
-      const entries = await deps.store.listEntries(vaultId, ownerUid, limit);
+      const entries = await deps.store.listEntries(vaultId, req.ownerUid, limit);
       res.status(200).json({ entries });
     } catch (err) {
       storeError(res, err);
@@ -168,17 +167,13 @@ export function createJournalRouter(deps: JournalDeps): Router {
   router.post('/:vaultId/entries/:entryId/groundings', async (req: Request, res: Response) => {
     const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
     const entryId = pathParam(res, req.params.entryId, 'entryId');
-    if (vaultId === undefined || entryId === undefined) {
+    if (vaultId === undefined || entryId === undefined || !checkVault(res, vaultId, req)) {
       return;
     }
-    const { ownerUid, placeId, sessionToken } = req.body as {
-      ownerUid?: unknown;
+    const { placeId, sessionToken } = req.body as {
       placeId?: unknown;
       sessionToken?: unknown;
     };
-    if (!checkVaultOwner(vaultId, ownerUid, res)) {
-      return;
-    }
     if (typeof placeId !== 'string' || placeId === '' || placeId.length > 256) {
       sendError(res, 400, 'placeId must be 1..256 chars');
       return;
@@ -194,6 +189,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
       return;
     }
     try {
+      const ownerUid = req.ownerUid;
       const entry = await deps.store.getEntry(vaultId, entryId, ownerUid);
       if (entry === null) {
         sendError(res, 404, 'entry not found');
@@ -217,7 +213,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
         return;
       }
       const snapshot = snapshotFromCache(placeId, record);
-      await deps.store.appendGrounding(vaultId, entryId, ownerUid, snapshot);
+      await deps.store.appendGrounding(vaultId, entryId, req.ownerUid, snapshot);
       res.status(201).json({ grounding: snapshot });
     } catch (err) {
       storeError(res, err);
@@ -227,14 +223,15 @@ export function createJournalRouter(deps: JournalDeps): Router {
   router.post('/:vaultId/entries/:entryId/reflections', async (req: Request, res: Response) => {
     const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
     const entryId = pathParam(res, req.params.entryId, 'entryId');
-    if (vaultId === undefined || entryId === undefined) {
+    if (vaultId === undefined || entryId === undefined || !checkVault(res, vaultId, req)) {
       return;
     }
-    const { ownerUid, history } = req.body as { ownerUid?: unknown; history?: unknown };
-    if (!checkVaultOwner(vaultId, ownerUid, res) || !checkHistory(history, res)) {
+    const { history } = req.body as { history?: unknown };
+    if (!checkHistory(history, res)) {
       return;
     }
     try {
+      const ownerUid = req.ownerUid;
       const entry = await deps.store.getEntry(vaultId, entryId, ownerUid);
       if (entry === null) {
         sendError(res, 404, 'entry not found');
@@ -255,7 +252,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
         sendError(res, 500, 'reflection failed');
         return;
       }
-      await deps.store.saveReflection(vaultId, entryId, ownerUid, reflection);
+      await deps.store.saveReflection(vaultId, entryId, req.ownerUid, reflection);
       res.status(201).json({ reflection });
     } catch (err) {
       storeError(res, err);

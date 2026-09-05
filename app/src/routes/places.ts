@@ -3,15 +3,18 @@
 // Maps key: the picker talks here, this talks to Places with the server key.
 // Mounted only when a key is configured (see server.ts); otherwise 404.
 import { Router, type Request, type Response } from 'express';
+import { requireAuth, type TokenVerifier } from '../auth.js';
 import { autocompletePlaces } from '../places/places.js';
 
 export interface PlacesDeps {
   readonly apiKey: string;
   readonly fetchImpl?: typeof fetch;
+  readonly verify: TokenVerifier;
 }
 
 export function createPlacesRouter(deps: PlacesDeps): Router {
   const router = Router();
+  router.use(requireAuth(deps.verify));
   router.post('/autocomplete', async (req: Request, res: Response) => {
     const { query, sessionToken } = req.body as { query?: unknown; sessionToken?: unknown };
     if (typeof query !== 'string' || query.trim() === '' || query.length > 200) {

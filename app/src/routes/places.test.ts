@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import express, { type Express } from 'express';
 import type { Server } from 'node:http';
 import { createPlacesRouter } from './places.js';
+import type { TokenVerifier } from '../auth.js';
 
 function fakeUpstream(body: unknown, status = 200) {
   const seen: Array<{ url: string; init?: RequestInit }> = [];
@@ -42,15 +43,25 @@ async function serve(app: Express): Promise<string> {
   return `http://127.0.0.1:${address.port}`;
 }
 function build(fetchImpl?: typeof fetch): Express {
+  const verify: TokenVerifier = async (token: string): Promise<string> => {
+    if (token === 'good-token') {
+      return 'alice';
+    }
+    throw new Error('bad token');
+  };
   const app = express();
   app.use(express.json());
-  app.use('/api/places', createPlacesRouter({ apiKey: 'k', fetchImpl }));
+  app.use('/api/places', createPlacesRouter({ apiKey: 'k', fetchImpl, verify }));
   return app;
 }
-async function post(url: string, body: unknown) {
+async function post(url: string, body: unknown, auth = 'Bearer good-token') {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (auth !== '') {
+    headers.Authorization = auth;
+  }
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   return { status: res.status, json: (await res.json()) as Record<string, unknown> };
@@ -114,5 +125,13 @@ describe('places router', () => {
     const r = await post(`${url}/api/places/autocomplete`, { query: 'rizal' });
     assert.equal(r.status, 502);
     assert.deepEqual(r.json, { error: 'place lookup failed' });
+  });
+
+  it('rejects unauthenticated callers', async () => {
+    const { fetchImpl, seen } = fakeUpstream(SUGGESTIONS);
+    const url = await serve(build(fetchImpl));
+    assert.equal((await post(`${url}/api/places/autocomplete`, { query: 'rizal' }, '')).status, 401);
+    assert.equal((await post(`${url}/api/places/autocomplete`, { query: 'rizal' }, 'Bearer bad')).status, 401);
+    assert.equal(seen.length, 0);
   });
 });
