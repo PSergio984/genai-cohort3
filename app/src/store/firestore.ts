@@ -83,20 +83,19 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
       // store verifies ownership itself instead of trusting the caller.
       // (Owner identity is enforced by the rules on the merged document
       // for client paths; this guard covers server paths.)
-      const snap = await entriesCol(db, vaultId).doc(entryId).get();
-      const data = snap.data() as EntryRecord | undefined;
-      if (data === undefined) {
-        throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
-      }
-      if (data.ownerUid !== ownerUid) {
-        throw new Error(`owner mismatch: entry belongs to another Vault owner`);
-      }
-      // Owner identity is enforced by the rules on the merged document
-      // (ownerUid untouched); the reflection text is APPENDED — repeat
-      // reflects extend the thread, never overwrite (spec: every model
-      // reply is recorded on the same Entry).
-      await entriesCol(db, vaultId).doc(entryId).update({
-        reflections: FieldValue.arrayUnion(text),
+      // Transactional read-modify-write (not arrayUnion): identical repeat
+      // replies are distinct Reflections and must both be recorded.
+      const ref = entriesCol(db, vaultId).doc(entryId);
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const data = snap.data() as EntryRecord | undefined;
+        if (data === undefined) {
+          throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
+        }
+        if (data.ownerUid !== ownerUid) {
+          throw new Error(`owner mismatch: entry belongs to another Vault owner`);
+        }
+        tx.update(ref, { reflections: [...(data.reflections ?? []), text] });
       });
     },
 

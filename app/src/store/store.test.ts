@@ -226,6 +226,15 @@ describe('saveEntry / listEntries', () => {
     assert.deepEqual(listed[0]?.entry.reflections, ['first', 'second']);
   });
 
+  it('identical repeat replies are both recorded', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await store.saveReflection(v, id, 'alice', 'same words');
+    await store.saveReflection(v, id, 'alice', 'same words');
+    const listed = await store.listEntries(v, 'alice', 10);
+    assert.deepEqual(listed[0]?.entry.reflections, ['same words', 'same words']);
+  });
+
   it('saveReflection by another owner rejects', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
