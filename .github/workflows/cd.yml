@@ -65,6 +65,8 @@ jobs:
       # billing guardrail. Dockerfile at repo root makes --source . deterministic.
       # NOTE: --set-secrets and --update-secrets are mutually exclusive — both
       # bindings ride one --update-secrets (slash-prefixed = volume, else env).
+      # PROJECT_ID rides --set-env-vars (different flag group, so combinable):
+      # without it wireJournal() degrades to health-only and /api/vaults 404s.
       - name: Deploy to Cloud Run
         if: steps.creds.outputs.skip != 'true'
         run: >
@@ -73,6 +75,7 @@ jobs:
           --region us-central1
           --allow-unauthenticated
           --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest
+          --set-env-vars=PROJECT_ID=valid-meridian-475214-e3
           --service-account=273533786531-compute@developer.gserviceaccount.com
           --labels=challenge=codelab,app=grounded-journal
           --max-instances=4

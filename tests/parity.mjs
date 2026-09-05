@@ -42,6 +42,7 @@ const requiredShape = [
   '--source .',
   '--region us-central1',
   '--update-secrets=/secrets/',
+  '--set-env-vars=PROJECT_ID=',
   '--service-account=',
   '--project=',
   '--quiet',

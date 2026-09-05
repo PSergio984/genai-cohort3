@@ -90,8 +90,8 @@ gcloud secrets add-iam-policy-binding maps-api-key --member=serviceAccount:27353
 ## 4. Build & Deploy
 
 ```bash
-# Validated: --source builds via Dockerfile/buildpacks, --update-secrets takes BOTH forms comma-separated (/path=SECRET:version mounts volume always-latest, KEY=SECRET:version sets env startup-pinned), --labels alias of --update-labels (per help run deploy). No --dry-run supported. GOTCHA 2026-09-04: --set-secrets and --update-secrets are mutually exclusive (one group) — first CD failed on it; combined form below is the fix.
-gcloud run deploy personal-gemini-journal --source . --region us-central1 --allow-unauthenticated --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest --service-account=$RUN_SA --labels=challenge=codelab,app=grounded-journal --project=$PROJECT_ID --quiet
+# Validated: --source builds via Dockerfile/buildpacks, --update-secrets takes BOTH forms comma-separated (/path=SECRET:version mounts volume always-latest, KEY=SECRET:version sets env startup-pinned), --labels alias of --update-labels (per help run deploy). No --dry-run supported. GOTCHA 2026-09-04: --set-secrets and --update-secrets are mutually exclusive (one group) — first CD failed on it; combined form below is the fix. GOTCHA 2026-09-05: wireJournal() reads PROJECT_ID from env, which Cloud Run does NOT set by itself — without --set-env-vars the service boots health-only and /api/vaults 404s (verified live). --set-env-vars is a different flag group, so it combines freely.
+gcloud run deploy personal-gemini-journal --source . --region us-central1 --allow-unauthenticated --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest --set-env-vars=PROJECT_ID=valid-meridian-475214-e3 --service-account=$RUN_SA --labels=challenge=codelab,app=grounded-journal --project=$PROJECT_ID --quiet
 gcloud run services describe personal-gemini-journal --region us-central1 --project=$PROJECT_ID --quiet
 ```
 
