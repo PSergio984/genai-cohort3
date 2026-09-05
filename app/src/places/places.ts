@@ -59,7 +59,10 @@ interface PlacesResponse {
   attributions?: Array<{ provider?: string }> | string[];
 }
 
-/** Field is Atmosphere-tier (expensive, expand-only) — never in CORE_MASK. */
+/** Non-empty token passthrough, or undefined: session tokens are opaque. */
+function optionalToken(token: string | undefined): string | undefined {
+  return token !== undefined && token !== '' ? token : undefined;
+}
 function wantsAtmosphere(mask: string, field: string): boolean {
   return mask.split(',').map((f) => f.trim()).includes(field);
 }
@@ -83,9 +86,10 @@ export async function fetchPlaceDetails(
   deps: FetchDeps,
 ): Promise<PlaceDetails> {
   const impl = deps.fetchImpl ?? fetch;
+  const token = optionalToken(deps.sessionToken);
   const url =
-    deps.sessionToken !== undefined && deps.sessionToken !== ''
-      ? `${PLACES_API}/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(deps.sessionToken)}`
+    token !== undefined
+      ? `${PLACES_API}/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(token)}`
       : `${PLACES_API}/places/${encodeURIComponent(placeId)}`;
   const res = await impl(url, {
     headers: { 'X-Goog-Api-Key': deps.apiKey, 'X-Goog-FieldMask': mask },
@@ -183,7 +187,7 @@ export async function autocompletePlaces(
     },
     body: JSON.stringify({
       input: query,
-      ...(deps.sessionToken !== undefined && deps.sessionToken !== '' ? { sessionToken: deps.sessionToken } : {}),
+      ...(optionalToken(deps.sessionToken) !== undefined ? { sessionToken: deps.sessionToken } : {}),
     }),
   });
   if (!res.ok) {
