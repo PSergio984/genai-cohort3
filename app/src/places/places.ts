@@ -39,6 +39,12 @@ export interface FetchDeps {
   readonly apiKey: string;
   /** Injectable HTTP layer (tests pass a fake; production omits it). */
   readonly fetchImpl?: typeof fetch;
+  /**
+   * Autocomplete session token, closed server-side: the picker opens a
+   * session (autocomplete calls) and the grounding fetch with the same token
+   * closes it (quota benefit). Random per picker session, never a secret.
+   */
+  readonly sessionToken?: string;
 }
 
 interface PlacesResponse {
@@ -77,7 +83,11 @@ export async function fetchPlaceDetails(
   deps: FetchDeps,
 ): Promise<PlaceDetails> {
   const impl = deps.fetchImpl ?? fetch;
-  const res = await impl(`${PLACES_API}/places/${encodeURIComponent(placeId)}`, {
+  const url =
+    deps.sessionToken !== undefined && deps.sessionToken !== ''
+      ? `${PLACES_API}/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(deps.sessionToken)}`
+      : `${PLACES_API}/places/${encodeURIComponent(placeId)}`;
+  const res = await impl(url, {
     headers: { 'X-Goog-Api-Key': deps.apiKey, 'X-Goog-FieldMask': mask },
   });
   if (!res.ok) {
@@ -129,11 +139,61 @@ export function createPlaceFetcher(
   fetchImpl?: typeof fetch,
   nowMs: () => number = Date.now,
 ) {
-  return async (placeId: string): Promise<FetchedPlace> => {
-    const details = await fetchPlaceDetails(placeId, CORE_MASK, { apiKey, fetchImpl });
+  return async (placeId: string, sessionToken?: string): Promise<FetchedPlace> => {
+    const details = await fetchPlaceDetails(placeId, CORE_MASK, { apiKey, fetchImpl, sessionToken });
     return {
       placeJson: details,
       fetchedAtMs: nowMs(),
     };
   };
+}
+
+export interface PlacePrediction {
+  readonly placeId: string;
+  readonly text: string;
+}
+
+interface AutocompleteResponse {
+  suggestions?: Array<{
+    placePrediction?: { placeId?: string; text?: { text?: string } };
+  }>;
+}
+
+export interface AutocompleteDeps {
+  readonly apiKey: string;
+  readonly fetchImpl?: typeof fetch;
+}
+
+/**
+ * Server-proxied autocomplete: the browser never holds a Maps key. The
+ * sessionToken (client-generated UUID per picker session) rides along so the
+ * later grounding fetch with the same token closes the session server-side.
+ */
+export async function autocompletePlaces(
+  query: string,
+  deps: AutocompleteDeps & { sessionToken?: string },
+): Promise<PlacePrediction[]> {
+  const impl = deps.fetchImpl ?? fetch;
+  const res = await impl(`${PLACES_API}/places:autocomplete`, {
+    method: 'POST',
+    headers: {
+      'X-Goog-Api-Key': deps.apiKey,
+      'Content-Type': 'application/json',
+      'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text',
+    },
+    body: JSON.stringify({
+      input: query,
+      ...(deps.sessionToken !== undefined && deps.sessionToken !== '' ? { sessionToken: deps.sessionToken } : {}),
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`places autocomplete failed: HTTP ${res.status}`);
+  }
+  const body = (await res.json()) as AutocompleteResponse;
+  return (body.suggestions ?? [])
+    .map((s) => ({
+      placeId: s.placePrediction?.placeId ?? '',
+      text: s.placePrediction?.text?.text ?? '',
+    }))
+    .filter((p) => p.placeId !== '' && p.text !== '');
 }

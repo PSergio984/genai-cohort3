@@ -5,7 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import express, { type Express } from 'express';
 import type { Server } from 'node:http';
-import { createJournalRouter } from './journal.js';
+import { createJournalRouter, type JournalDeps } from './journal.js';
 import { QuotaDepletedError, TransientGeminiError, FatalGeminiError, type IGeminiClient } from '../gemini/client.js';
 import type {
   EntryRecord,
@@ -216,7 +216,13 @@ describe('journal routes', () => {
   it('rejects bad grounding input and missing entries', async () => {
     const created = await post(`${url}/api/vaults/v1/entries`, { ownerUid: 'v1', text: 'here' });
     const id = created.json.id as string;
-    for (const body of [{ ownerUid: 'v1', placeId: '' }, { ownerUid: 'v1' }, { ownerUid: 'x', placeId: 'ChIJX' }]) {
+    for (const body of [
+      { ownerUid: 'v1', placeId: '' },
+      { ownerUid: 'v1' },
+      { ownerUid: 'x', placeId: 'ChIJX' },
+      { ownerUid: 'v1', placeId: 'ChIJX', sessionToken: '' },
+      { ownerUid: 'v1', placeId: 'ChIJX', sessionToken: 'x'.repeat(129) },
+    ]) {
       const r = await post(`${url}/api/vaults/v1/entries/${id}/groundings`, body);
       assert.equal(r.status, 400);
     }
@@ -292,6 +298,34 @@ describe('journal routes', () => {
     assert.equal(badHist.status, 400);
     const missing = await post(`${url}/api/vaults/v1/entries/nope/reflections`, { ownerUid: 'v1' });
     assert.equal(missing.status, 404);
+  });
+
+  it('passes the autocomplete session token to the fetcher', async () => {
+    const seen: Array<{ placeId: string; token?: string }> = [];
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api/vaults',
+      createJournalRouter({
+        store: new FakeStore(),
+        fetchPlace: (async (placeId: string, sessionToken?: string) => {
+          seen.push({ placeId, token: sessionToken });
+          return { placeJson: { name: 'P' }, fetchedAtMs: T0 };
+        }) as JournalDeps['fetchPlace'],
+        gemini: geminiOk(),
+      }),
+    );
+    await shutdown();
+    const base2 = await base(app);
+    const created = await post(`${base2}/api/vaults/v9/entries`, { ownerUid: 'v9', text: 'here' });
+    const id = created.json.id as string;
+    const g = await post(`${base2}/api/vaults/v9/entries/${id}/groundings`, {
+      ownerUid: 'v9',
+      placeId: 'ChIJX',
+      sessionToken: 'tok-1',
+    });
+    assert.equal(g.status, 201);
+    assert.deepEqual(seen, [{ placeId: 'ChIJX', token: 'tok-1' }]);
   });
 
   it('opaque cached payloads degrade to id + defaults, never crash', async () => {

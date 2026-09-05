@@ -10,7 +10,7 @@ import type { JournalDeps } from './routes/journal.js';
 
 const port = Number(process.env.PORT ?? 8080);
 
-function wireJournal(): JournalDeps | undefined {
+function wireJournal(): { journal?: JournalDeps; placesApiKey?: string } {
   const projectId = process.env.PROJECT_ID;
   const mapsKey = resolveMapsKey();
   const geminiKey = resolveGeminiKey();
@@ -25,10 +25,14 @@ function wireJournal(): JournalDeps | undefined {
           .filter((s) => s !== null)
           .join(', '),
     );
-    return undefined;
+    return mapsKey === undefined ? {} : { placesApiKey: mapsKey };
   }
   const store = createFirestoreStore(createDeps(projectId));
-  return { store, fetchPlace: createPlaceFetcher(mapsKey), gemini: createSdkClient({ apiKey: geminiKey }) };
+  const fetchPlace = createPlaceFetcher(mapsKey);
+  return {
+    journal: { store, fetchPlace, gemini: createSdkClient({ apiKey: geminiKey }) },
+    placesApiKey: mapsKey,
+  };
 }
 
 createApp(wireJournal()).listen(port, '0.0.0.0', () => {

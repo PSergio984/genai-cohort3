@@ -24,7 +24,7 @@ import type {
 export interface JournalDeps {
   readonly store: JournalStore;
   /** Place resolution honoring the store cache (production: store.getPlace + CORE fetch). */
-  readonly fetchPlace: (placeId: string) => Promise<FetchedPlace>;
+  readonly fetchPlace: (placeId: string, sessionToken?: string) => Promise<FetchedPlace>;
   readonly gemini: IGeminiClient;
 }
 
@@ -171,12 +171,26 @@ export function createJournalRouter(deps: JournalDeps): Router {
     if (vaultId === undefined || entryId === undefined) {
       return;
     }
-    const { ownerUid, placeId } = req.body as { ownerUid?: unknown; placeId?: unknown };
+    const { ownerUid, placeId, sessionToken } = req.body as {
+      ownerUid?: unknown;
+      placeId?: unknown;
+      sessionToken?: unknown;
+    };
     if (!checkVaultOwner(vaultId, ownerUid, res)) {
       return;
     }
     if (typeof placeId !== 'string' || placeId === '' || placeId.length > 256) {
       sendError(res, 400, 'placeId must be 1..256 chars');
+      return;
+    }
+    // Autocomplete session token closes server-side on this grounding fetch.
+    // Random per picker session, never a secret — validated as opaque string.
+    const token =
+      typeof sessionToken === 'string' && sessionToken !== '' && sessionToken.length <= 128
+        ? sessionToken
+        : undefined;
+    if (sessionToken !== undefined && token === undefined) {
+      sendError(res, 400, 'sessionToken must be a string <=128 chars');
       return;
     }
     try {
@@ -192,7 +206,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
       }
       let record: PlaceCacheRecord;
       try {
-        record = await deps.store.getPlace(vaultId, placeId, deps.fetchPlace);
+        record = await deps.store.getPlace(vaultId, placeId, (id) => deps.fetchPlace(id, token));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (/HTTP 404/.test(message)) {

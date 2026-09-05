@@ -1,0 +1,15 @@
+/* Grounded Journal — minimal, readable, no framework. */
+body { font-family: Georgia, serif; color: #222; margin: 0; background: #faf9f7; }
+main { max-width: 640px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+h1 { margin-bottom: 0; }
+.sub { color: #666; margin-top: 0.25rem; }
+section { background: #fff; border: 1px solid #ddd; padding: 1rem; margin-top: 1rem; }
+textarea, input[type="text"] { width: 100%; box-sizing: border-box; padding: 0.5rem; font: inherit; }
+button { margin-top: 0.5rem; padding: 0.45rem 0.9rem; cursor: pointer; }
+ul { list-style: none; padding: 0; }
+#suggestions li button, #history li { display: block; width: 100%; text-align: left; }
+#suggestions li button { border: 1px solid #ddd; background: #f6f6f4; margin-top: 0.25rem; }
+#history li { border-top: 1px solid #eee; padding: 0.5rem 0; }
+.meta { color: #666; font-size: 0.85rem; }
+.reflection { background: #f6f6f4; padding: 0.5rem; margin-top: 0.5rem; white-space: pre-wrap; }
+footer { color: #888; font-size: 0.8rem; margin-top: 1.5rem; }

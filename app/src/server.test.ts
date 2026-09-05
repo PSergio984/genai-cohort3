@@ -27,6 +27,27 @@ describe('server', () => {
     assert.equal(res.headers.get('x-powered-by'), null);
   });
 
+  it('serves the static frontend at /', async () => {
+    const address = server?.address();
+    assert.ok(address !== null && typeof address === 'object');
+    const res = await fetch(`http://127.0.0.1:${address.port}/`);
+    assert.equal(res.status, 200);
+    assert.ok((res.headers.get('content-type') ?? '').includes('text/html'));
+    const html = await res.text();
+    assert.ok(html.includes('Grounded Journal'));
+    assert.ok(html.includes('/app.js'));
+  });
+
+  it('serves frontend assets', async () => {
+    const address = server?.address();
+    assert.ok(address !== null && typeof address === 'object');
+    const js = await fetch(`http://127.0.0.1:${address.port}/app.js`);
+    assert.equal(js.status, 200);
+    assert.ok((js.headers.get('content-type') ?? '').includes('javascript'));
+    const css = await fetch(`http://127.0.0.1:${address.port}/styles.css`);
+    assert.equal(css.status, 200);
+  });
+
   it('unknown routes 404', async () => {
     const address = server?.address();
     assert.ok(address !== null && typeof address === 'object');

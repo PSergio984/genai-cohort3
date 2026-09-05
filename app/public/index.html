@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grounded Journal</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main>
+  <h1>Grounded Journal</h1>
+  <p class="sub">Write. Ground in a real place. Reflect with Gemini.</p>
+
+  <section aria-label="Write an entry">
+    <h2>1 · Write</h2>
+    <textarea id="entry" rows="4" maxlength="5000" placeholder="I walked here today feeling stuck."></textarea>
+    <button id="save">Save entry</button>
+  </section>
+
+  <section aria-label="Attach a place" id="ground-section" hidden>
+    <h2>2 · Ground</h2>
+    <input id="search" type="text" maxlength="200" placeholder="Search a place…" autocomplete="off">
+    <ul id="suggestions" role="listbox" aria-label="Place suggestions"></ul>
+    <ul id="attached"></ul>
+  </section>
+
+  <section aria-label="Reflect" id="reflect-section" hidden>
+    <h2>3 · Reflect</h2>
+    <button id="reflect">Reflect with Gemini</button>
+    <div id="reflections"></div>
+  </section>
+
+  <section aria-label="History">
+    <h2>History</h2>
+    <button id="refresh">Refresh</button>
+    <ul id="history"></ul>
+  </section>
+
+  <footer>Demo identity until sign-in lands — your vault lives in this browser.</footer>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

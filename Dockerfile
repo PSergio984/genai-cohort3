@@ -14,6 +14,8 @@ WORKDIR /srv
 COPY --from=build /srv/app/package.json /srv/app/package-lock.json ./app/
 RUN npm ci --omit=dev --prefix ./app
 COPY --from=build /srv/app/dist ./app/dist
+# Static frontend (no build step): served by express.static from app/public.
+COPY app/public ./app/public
 ENV PORT=8080
 EXPOSE 8080
 CMD ["node", "app/dist/main.js"]

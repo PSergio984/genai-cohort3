@@ -38,6 +38,15 @@ npm run typecheck --prefix app
 npm test --prefix app        # unit tests (Journal reducer + server boundary)
 ```
 
+## Frontend (no build step)
+
+Open `/` on the running service: write an Entry, attach a Place via the
+search picker (proxied through `POST /api/places/autocomplete` — the browser
+never holds a Maps key; the session token closes server-side on grounding),
+reflect on demand, and browse history. Identity is a demo id in localStorage
+until the Firebase Auth sign-in slice lands; the map toggle waits on a
+browser key (deferred, no new secrets until then).
+
 Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./cmd.md)
 — read it before running anything; it carries the validated syntax, the guardrails
 (`--quiet --project --region`, no IAM/delete/billing without approval), and the log.
@@ -95,6 +104,8 @@ Every cloud command for this repo is logged copy-paste runnable in [`cmd.md`](./
 │   └── agents/              # issue-tracker / triage-labels / domain
 ├── AGENTS.md                # agent-skills pointer block
 ├── app/                     # TS app: domain core + Firestore store + server
+│   ├── public/              # static frontend (no build): write, attach, reflect, history
+│   └── src/routes/          # journal API + places autocomplete proxy
 ├── firestore.rules + firebase.json  # Vault rules (tested 19/19, pending one authed release) + emulator config
 ├── tests/firestore/         # emulator rules suite + README-to-cmd.md parity check
 ├── .github/workflows/       # CI (typecheck, suites, parity) + CD (build, deploy)
