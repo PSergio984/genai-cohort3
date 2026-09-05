@@ -64,12 +64,25 @@ byId('signout').addEventListener('click', async function () {
   await signOut(auth);
 });
 
+function clearJournalUi() {
+  entryId = null;
+  attached = [];
+  sessionToken = null;
+  byId('entry').value = '';
+  byId('search').value = '';
+  byId('suggestions').innerHTML = '';
+  byId('attached').innerHTML = '';
+  byId('reflections').innerHTML = '';
+  byId('history').innerHTML = '';
+  hide('ground-section');
+  hide('reflect-section');
+}
+
 onAuthStateChanged(auth, async function (user) {
   if (!user) {
     vaultId = null;
     idToken = null;
-    entryId = null;
-    attached = [];
+    clearJournalUi();
     hide('journal');
     hide('signed-in');
     show('signed-out');
