@@ -112,7 +112,7 @@ export function History({
                 row.entry.createdAt !== undefined && row.entry.createdAt !== ''
                   ? new Date(row.entry.createdAt).toLocaleString()
                   : '';
-              const turnCount = row.entry.turns.length;
+              const turnCount = (row.entry.turns ?? []).length;
               return (
                 <li key={row.id} className={row.id === selectedId ? 'selected' : undefined}>
                   <div className="entry-text">{row.entry.text}</div>

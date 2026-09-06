@@ -68,12 +68,13 @@ export function createApiClient(
     },
     async listEntries(limit: number): Promise<HistoryRow[]> {
       const out = await call<{ entries: HistoryRow[] }>(`${base}/entries?limit=${limit}`);
-      return out.entries ?? [];
+      return (out.entries ?? []).map((row) => ({ id: row.id, entry: normalizeEntry(row.entry) }));
     },
     async getEntry(entryId: string): Promise<{ id: string; entry: EntryRecord }> {
-      return call<{ id: string; entry: EntryRecord }>(
+      const out = await call<{ id: string; entry: EntryRecord }>(
         `${base}/entries/${encodeURIComponent(entryId)}`,
       );
+      return { id: out.id, entry: normalizeEntry(out.entry) };
     },
     async groundPlace(
       entryId: string,
@@ -118,4 +119,16 @@ export function createApiClient(
 
 export function newSessionToken(): string {
   return `sess-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+// Older vault entries predate newer fields (e.g. turns). Normalize at the
+// seam so rendering never meets undefined where it maps or measures.
+export function normalizeEntry(entry: EntryRecord): EntryRecord {
+  return {
+    text: typeof entry.text === 'string' ? entry.text : '',
+    placeIds: Array.isArray(entry.placeIds) ? entry.placeIds : [],
+    groundingSnapshots: Array.isArray(entry.groundingSnapshots) ? entry.groundingSnapshots : [],
+    turns: Array.isArray(entry.turns) ? entry.turns : [],
+    createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : '',
+  };
 }
