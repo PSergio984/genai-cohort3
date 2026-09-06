@@ -35,17 +35,25 @@ describe('server', () => {
     assert.ok((res.headers.get('content-type') ?? '').includes('text/html'));
     const html = await res.text();
     assert.ok(html.includes('Grounded Journal'));
-    assert.ok(html.includes('/app.js'));
-    assert.ok(html.includes('Sign in with Google'));
+    assert.ok(html.includes('<div id="root"'));
+    // NOTE: "Sign in with Google" renders client-side; the shell only mounts
+    // #root. Runtime text is verified in the browser inspection pass.
   });
 
   it('serves frontend assets', async () => {
     const address = server?.address();
     assert.ok(address !== null && typeof address === 'object');
-    const js = await fetch(`http://127.0.0.1:${address.port}/app.js`);
+    // The React+Vite build emits hashed asset names; resolve them from the
+    // served shell instead of pinning filenames.
+    const shell = await (await fetch(`http://127.0.0.1:${address.port}/`)).text();
+    const jsSrc = shell.match(/<script[^>]*\ssrc="([^"]+)"/)?.[1];
+    const cssHref = shell.match(/<link[^>]*\shref="([^"]+\.css)"/)?.[1];
+    assert.ok(jsSrc !== undefined && jsSrc !== '');
+    assert.ok(cssHref !== undefined && cssHref !== '');
+    const js = await fetch(`http://127.0.0.1:${address.port}${jsSrc}`);
     assert.equal(js.status, 200);
     assert.ok((js.headers.get('content-type') ?? '').includes('javascript'));
-    const css = await fetch(`http://127.0.0.1:${address.port}/styles.css`);
+    const css = await fetch(`http://127.0.0.1:${address.port}${cssHref}`);
     assert.equal(css.status, 200);
   });
 

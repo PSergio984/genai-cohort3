@@ -1,0 +1,287 @@
+/* Grounded Journal — e-ink instrument world. Neutral paper, ink-black prose,
+ * hairline rules, one ink-blue accent held by law for grounded and
+ * reflection states. System sans for controls, reading serif for entries. */
+:root {
+  --paper: #f4f4f1;
+  --sheet: #fbfbfa;
+  --ink: #1b1b19;
+  --ink-2: #61615c;
+  --line: #dcdcd6;
+  --line-strong: #c4c4bd;
+  --accent: #233fa8;
+  --accent-ink: #ffffff;
+  --seal: #7e2a1e;
+  --wash: #ececea;
+  --user-wash: #e7ecf8;
+  --ok: #2a6b2a;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: Georgia, "Charter", "Times New Roman", serif;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.55;
+  caret-color: var(--accent);
+}
+
+::selection { background: #c9d4f5; color: var(--ink); }
+
+.page { max-width: 46rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+
+/* Masthead: name, rule, standfirst. No eyebrow: the name speaks. */
+.masthead h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+.masthead .standfirst { margin: 0.35rem 0 0; color: var(--ink-2); font-size: 0.95rem; }
+.masthead .rule {
+  margin: 1rem 0 0;
+  border: 0;
+  border-top: 2px solid var(--ink);
+}
+
+/* Status line: the instrument readout. */
+.status {
+  min-height: 1.6em;
+  margin: 0.75rem 0 0;
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+.status[data-tone="error"] { color: var(--seal); }
+.status[data-tone="ok"] { color: var(--ok); }
+.status[data-tone="busy"] { color: var(--ink-2); }
+
+/* Segments: ruled, not carded. More air above the heading than below. */
+.segment { margin: 2.25rem 0 0; }
+.segment > h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin: 0 0 0.375rem;
+}
+
+.hint { margin: 0.625rem 0 0; font-size: 0.8125rem; color: var(--ink-2); }
+.meta {
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.count { font-variant-numeric: tabular-nums; }
+
+/* Controls: one vocabulary everywhere. */
+textarea, input[type="text"] {
+  width: 100%;
+  padding: 0.625rem 0.7rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--sheet);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+textarea::placeholder, input[type="text"]::placeholder { color: var(--ink-2); opacity: 1; }
+textarea:hover, input[type="text"]:hover { border-color: var(--ink-2); }
+textarea:focus-visible, input[type="text"]:focus-visible,
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Type as matter: the entry's own words carry the largest type on the page. */
+.entry-field {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  line-height: 1.6;
+  min-height: 7rem;
+  resize: vertical;
+}
+
+button {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.55rem 1.1rem;
+  border-radius: 3px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+  transition: background-color 180ms var(--ease), color 180ms var(--ease),
+    border-color 180ms var(--ease), opacity 180ms var(--ease);
+}
+button:hover { background: #000; border-color: #000; }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+button.quiet {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+  font-weight: 500;
+  padding: 0.375rem 0.8rem;
+  font-size: 0.8125rem;
+}
+button.quiet:hover { background: var(--wash); border-color: var(--ink-2); }
+button.linklike {
+  background: none;
+  border: none;
+  border-radius: 2px;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+.row { display: flex; gap: 0.625rem; align-items: center; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.stack { margin-top: 0.75rem; }
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--sheet);
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 0.8125rem;
+  padding: 0.4rem 0.75rem;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button:hover { background: var(--wash); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button[aria-pressed="true"]:hover { background: var(--accent); }
+.seg button:disabled { color: var(--ink-2); }
+
+/* Picker: ruled index rows. */
+.suggestions { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.suggestions li + li { border-top: 1px solid var(--line); }
+.suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--ink);
+  font-weight: 500;
+  padding: 0.55rem 0.25rem;
+}
+.suggestions button:hover { background: var(--wash); }
+.suggestions button[aria-selected="true"] { background: var(--user-wash); }
+.suggestions .none { padding: 0.55rem 0.25rem; font-size: 0.875rem; color: var(--ink-2); }
+
+/* Grounding ledger rows. */
+.ledger { list-style: none; margin: 0.75rem 0 0; padding: 0; border-top: 1px solid var(--line); }
+.ledger > li { padding: 0.625rem 0.125rem; border-bottom: 1px solid var(--line); }
+.ledger .place { font-weight: 650; }
+.ledger .place .pin { color: var(--accent); margin-right: 0.375rem; vertical-align: -2px; }
+.ledger .empty { color: var(--ink-2); font-size: 0.875rem; }
+.ledger .actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.details { margin-top: 0.375rem; }
+
+/* Session turns: the model's words on wash, the user's tinted from the accent. */
+.session-turns { margin-top: 0.75rem; display: grid; gap: 0.625rem; }
+.turn {
+  padding: 0.7rem 0.8rem;
+  border-radius: 3px;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.turn.model { background: var(--wash); }
+.turn.user { background: var(--user-wash); }
+.audit { font-family: var(--sans); font-size: 0.75rem; color: var(--ink-2); margin-top: 0.25rem; }
+.audit .pin { color: var(--accent); }
+
+.followup { margin-top: 1.25rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+.followup .row input { flex: 1 1 14rem; }
+
+/* History: ruled entries, state glyph, tabular metadata. */
+.history { list-style: none; margin: 1rem 0 0; padding: 0; border-top: 1px solid var(--line-strong); }
+.history > li { padding: 0.875rem 0.125rem; border-bottom: 1px solid var(--line); }
+.history > li.selected { background: var(--user-wash); margin: 0 -0.5rem; padding-left: 0.625rem; padding-right: 0.625rem; }
+.history .entry-text {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.history .state { display: inline-flex; align-items: center; gap: 0.375rem; }
+.history .state.grounded { color: var(--accent); font-weight: 650; }
+.history .preview { margin-top: 0.5rem; display: grid; gap: 0.375rem; }
+.history .preview .turn { font-size: 0.925rem; padding: 0.5rem 0.625rem; }
+.history .open { margin-top: 0.5rem; }
+.history .empty { padding: 1rem 0.125rem; color: var(--ink-2); font-size: 0.9rem; }
+
+.skeleton { padding: 0.875rem 0; border-bottom: 1px solid var(--line); }
+.skeleton span {
+  display: block;
+  height: 0.8rem;
+  border-radius: 2px;
+  background: var(--line);
+}
+.skeleton span + span { margin-top: 0.5rem; width: 62%; }
+
+.authline { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.authline .display-name { font-weight: 600; }
+
+.mapnote {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: 3px;
+  padding: 0.625rem 0.75rem;
+  background: var(--sheet);
+}
+
+.colophon {
+  margin: 3rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-strong);
+  color: var(--ink-2);
+  font-size: 0.8rem;
+}
+
+/* Thin, tinted scrollbars instead of platform gray. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+
+/* Structural responsive behavior, not fluid type. */
+@media (max-width: 32.5rem) {
+  .page { padding: 1.25rem 0.875rem 3rem; }
+  .masthead h1 { font-size: 1.5rem; }
+  .entry-field { font-size: 1.125rem; }
+  .toolbar { gap: 0.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+}

@@ -26,6 +26,19 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --prefix app
 
+      # The server tests serve the built client from app/public (gitignored
+      # build output), so the client builds first. Firebase web config comes
+      # from repo Variables (public identifiers, never repo files).
+      - name: Install + build client
+        run: |
+          npm ci --prefix app/client
+          npm run build --prefix app/client
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+
       - name: Set up Java (Firestore emulator)
         uses: actions/setup-java@v4
         with:
