@@ -16,6 +16,7 @@ export interface Pin {
 declare global {
   interface Window {
     __MAPS_CONFIG__?: { browserKey?: string | null } | null;
+    __groundedJournalMapsReady?: () => void;
     google?: {
       maps?: {
         Map?: new (el: Element, opts: Record<string, unknown>) => unknown;
@@ -52,16 +53,28 @@ export function loadMaps(key: string): Promise<void> {
     return Promise.resolve();
   }
   if (loading !== null) return loading;
+  // Recommended bootstrap (loading=async + callback): the legacy direct load
+  // logs a suboptimal-performance warning in the console.
   loading = new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const done = (ok: boolean, err?: Error): void => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      if (ok) {
+        resolve();
+      } else {
+        loading = null;
+        reject(err ?? new Error('Maps library failed to load'));
+      }
+    };
+    window.__groundedJournalMapsReady = () => done(true);
+    const timer = window.setTimeout(() => done(false), 20000);
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&loading=async&callback=__groundedJournalMapsReady&v=weekly`;
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      loading = null;
-      reject(new Error('Maps library failed to load'));
-    };
+    script.onerror = () => done(false);
     document.head.appendChild(script);
   });
   return loading;
