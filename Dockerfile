@@ -7,18 +7,8 @@ RUN npm ci --prefix ./app
 COPY app/tsconfig.json ./app/
 COPY app/src ./app/src
 # React+Vite frontend: built here so the image never depends on host output.
-# Firebase web config rides build args (public identifiers, but scanner-hostile:
-# never default them here). Local docker builds and CD pass --set-build-env-vars
-# / --build-arg from repo Variables (see cmd.md section 4); app/client/.env
-# covers `npm run build` outside Docker.
-ARG VITE_FIREBASE_API_KEY
-ARG VITE_FIREBASE_AUTH_DOMAIN
-ARG VITE_FIREBASE_PROJECT_ID
-ARG VITE_FIREBASE_APP_ID
-ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
-ENV VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN
-ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
-ENV VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
+# (No build args: the browser reads Firebase web config at runtime from the
+# server-rendered /firebase-config.js route, fed by container env.)
 COPY app/client/package.json app/client/package-lock.json ./app/client/
 RUN npm ci --prefix ./app/client
 COPY app/client/index.html app/client/tsconfig.json app/client/vite.config.ts ./app/client/

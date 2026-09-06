@@ -38,7 +38,23 @@ export function createApp(deps?: AppDeps): Express {
       createPlacesRouter({ apiKey: deps.placesApiKey, fetchImpl: deps.placesFetchImpl, verify: deps.verify }),
     );
   }
-  // Static frontend (no build step): index + app.js + styles.css.
+  // Runtime Firebase web config for the browser (public identifiers, not
+  // secrets — but secret-scanner hostile, so they ride server env, never
+  // source or build output). Values come from FIREBASE_WEB_* env, set via
+  // --set-env-vars at deploy time (see cmd.md section 4). Served as JS so
+  // the static shell needs no per-environment rebuild. Nulls when unset;
+  // the client fail-fasts with an actionable message in that case.
+  app.get('/firebase-config.js', (_req: Request, res: Response) => {
+    res.type('application/javascript').send(
+      `window.__FIREBASE_CONFIG__=${JSON.stringify({
+        apiKey: process.env.FIREBASE_WEB_API_KEY ?? null,
+        authDomain: process.env.FIREBASE_WEB_AUTH_DOMAIN ?? null,
+        projectId: process.env.FIREBASE_WEB_PROJECT_ID ?? null,
+        appId: process.env.FIREBASE_WEB_APP_ID ?? null,
+      })};`,
+    );
+  });
+  // Static frontend (Vite build output): index + assets.
   const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
   app.use(express.static(publicDir));
   return app;

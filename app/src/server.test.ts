@@ -63,4 +63,36 @@ describe('server', () => {
     const res = await fetch(`http://127.0.0.1:${address.port}/nope`);
     assert.equal(res.status, 404);
   });
+
+  it('serves runtime Firebase web config for the browser', async () => {
+    process.env.FIREBASE_WEB_API_KEY = 'test-api-key';
+    process.env.FIREBASE_WEB_AUTH_DOMAIN = 'test.firebaseapp.com';
+    process.env.FIREBASE_WEB_PROJECT_ID = 'test-project';
+    process.env.FIREBASE_WEB_APP_ID = 'test-app-id';
+    try {
+      const address = server?.address();
+      assert.ok(address !== null && typeof address === 'object');
+      const res = await fetch(`http://127.0.0.1:${address.port}/firebase-config.js`);
+      assert.equal(res.status, 200);
+      assert.ok((res.headers.get('content-type') ?? '').includes('javascript'));
+      const body = await res.text();
+      assert.ok(body.includes('window.__FIREBASE_CONFIG__='));
+      assert.ok(body.includes('test-api-key'));
+      assert.ok(body.includes('test-app-id'));
+    } finally {
+      delete process.env.FIREBASE_WEB_API_KEY;
+      delete process.env.FIREBASE_WEB_AUTH_DOMAIN;
+      delete process.env.FIREBASE_WEB_PROJECT_ID;
+      delete process.env.FIREBASE_WEB_APP_ID;
+    }
+  });
+
+  it('serves null web config fields when env is absent (client fail-fasts)', async () => {
+    const address = server?.address();
+    assert.ok(address !== null && typeof address === 'object');
+    const res = await fetch(`http://127.0.0.1:${address.port}/firebase-config.js`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.ok(body.includes('"apiKey":null'));
+  });
 });

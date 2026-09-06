@@ -25,6 +25,9 @@ jobs:
     #   VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN,
     #   VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_APP_ID
     #   (values: Firebase console → Project settings → Your apps).
+    # They ride --set-env-vars (runtime, proven path) into the server-rendered
+    # /firebase-config.js route — NOT --set-build-env-vars, which never reaches
+    # Dockerfile ARG (verified live 2026-09-06: bundle baked undefined).
     # No app secrets needed here: GEMINI/MAPS keys already live in Secret
     # Manager and mount at deploy time (see cmd.md section 3).
 
@@ -72,9 +75,7 @@ jobs:
       # bindings ride one --update-secrets (slash-prefixed = volume, else env).
       # PROJECT_ID rides --set-env-vars (different flag group, so combinable):
       # without it wireJournal() degrades to health-only and /api/vaults 404s.
-      # Firebase web config rides --set-build-env-vars into the Dockerfile
-      # client build (verified flag via `gcloud run deploy --help`); values come
-      # from repo Variables so no key-shaped string ever lands in a repo file.
+      # Firebase web config rides the same flag into /firebase-config.js.
       - name: Deploy to Cloud Run
         if: steps.creds.outputs.skip != 'true'
         run: >
@@ -83,8 +84,7 @@ jobs:
           --region us-central1
           --allow-unauthenticated
           --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest
-          --set-env-vars=PROJECT_ID=valid-meridian-475214-e3
-          --set-build-env-vars=VITE_FIREBASE_API_KEY=${{ vars.VITE_FIREBASE_API_KEY }},VITE_FIREBASE_AUTH_DOMAIN=${{ vars.VITE_FIREBASE_AUTH_DOMAIN }},VITE_FIREBASE_PROJECT_ID=${{ vars.VITE_FIREBASE_PROJECT_ID }},VITE_FIREBASE_APP_ID=${{ vars.VITE_FIREBASE_APP_ID }}
+          --set-env-vars=PROJECT_ID=valid-meridian-475214-e3,FIREBASE_WEB_API_KEY=${{ vars.VITE_FIREBASE_API_KEY }},FIREBASE_WEB_AUTH_DOMAIN=${{ vars.VITE_FIREBASE_AUTH_DOMAIN }},FIREBASE_WEB_PROJECT_ID=${{ vars.VITE_FIREBASE_PROJECT_ID }},FIREBASE_WEB_APP_ID=${{ vars.VITE_FIREBASE_APP_ID }}
           --service-account=273533786531-compute@developer.gserviceaccount.com
           --labels=challenge=codelab,app=grounded-journal
           --max-instances=4

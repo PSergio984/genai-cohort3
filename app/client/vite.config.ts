@@ -11,7 +11,9 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      // Backend routes needed during `npm run dev` (the backend must run too).
       '/api': 'http://127.0.0.1:8080',
+      '/firebase-config.js': 'http://127.0.0.1:8080',
     },
   },
 });
