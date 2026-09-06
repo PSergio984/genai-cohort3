@@ -20,6 +20,7 @@ import type {
   GroundingSnapshot,
   JournalStore,
   PlaceCacheRecord,
+  TurnRecord,
 } from '../store/repository.js';
 
 export interface JournalDeps {
@@ -100,6 +101,22 @@ function storeError(res: Response, err: unknown): void {
   sendError(res, 500, 'internal error');
 }
 
+/** Display view over a cached record: snapshot fields plus inline card
+ *  facts when the cached payload carries them. Never fetches (zero quota). */
+export function detailsFromCache(placeId: string, record: PlaceCacheRecord): PlaceDetails {
+  const snap = snapshotFromCache(placeId, record);
+  const raw: unknown = record.placeJson;
+  const obj: Partial<PlaceDetails> =
+    typeof raw === 'object' && raw !== null ? (raw as Partial<PlaceDetails>) : {};
+  return {
+    ...snap,
+    ...(typeof obj.rating === 'number' ? { rating: obj.rating } : {}),
+    ...(Array.isArray(obj.hours) && obj.hours.every((h): h is string => typeof h === 'string')
+      ? { hours: obj.hours }
+      : {}),
+  };
+}
+
 /** Build the frozen snapshot from a cached place record; never crashes on shape. */
 export function snapshotFromCache(placeId: string, record: PlaceCacheRecord): GroundingSnapshot {
   const raw: unknown = record.placeJson;
@@ -136,7 +153,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
         text,
         placeIds: [],
         groundingSnapshots: [],
-        reflections: [],
+        turns: [],
         createdAt: new Date().toISOString(),
       });
       res.status(201).json({ id });
@@ -195,8 +212,8 @@ export function createJournalRouter(deps: JournalDeps): Router {
         sendError(res, 404, 'entry not found');
         return;
       }
-      // Domain freeze rule: the first Reflection seals the Groundings.
-      if (entry.reflections.length > 0) {
+      // Domain freeze rule: the first model turn seals the Groundings.
+      if (entry.turns.some((t) => t.by === 'model')) {
         sendError(res, 409, 'REFUSED: Grounding is frozen — a Reflection already exists.');
         return;
       }
@@ -237,9 +254,17 @@ export function createJournalRouter(deps: JournalDeps): Router {
         sendError(res, 404, 'entry not found');
         return;
       }
+      // New user turns from this call persist with the entry's placeIds
+      // (what the conversation can see); history is per-call deltas only.
+      const newUserTurns: TurnRecord[] = (history ?? []).map((t) => ({ ...t, placeIds: [...entry.placeIds] }));
       let reflection: string;
       try {
-        reflection = await reflect(entry.text, entry.groundingSnapshots, deps.gemini, history ?? []);
+        reflection = await reflect(
+          entry.text,
+          entry.groundingSnapshots,
+          deps.gemini,
+          [...entry.turns, ...newUserTurns],
+        );
       } catch (err) {
         if (err instanceof QuotaDepletedError) {
           sendError(res, 429, 'model quota depleted — try again later');
@@ -252,8 +277,57 @@ export function createJournalRouter(deps: JournalDeps): Router {
         sendError(res, 500, 'reflection failed');
         return;
       }
-      await deps.store.saveReflection(vaultId, entryId, req.ownerUid, reflection);
+      // The model reply is recorded with the placeIds it saw (audit trail).
+      await deps.store.appendTurns(vaultId, entryId, ownerUid, [
+        ...newUserTurns,
+        { by: 'model', text: reflection, placeIds: [...entry.placeIds] },
+      ]);
       res.status(201).json({ reflection });
+    } catch (err) {
+      storeError(res, err);
+    }
+  });
+
+  router.delete('/:vaultId/entries/:entryId/groundings/:placeId', async (req: Request, res: Response) => {
+    const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
+    const entryId = pathParam(res, req.params.entryId, 'entryId');
+    const placeId = pathParam(res, req.params.placeId, 'placeId');
+    if (vaultId === undefined || entryId === undefined || placeId === undefined) {
+      return;
+    }
+    if (!checkVault(res, vaultId, req)) {
+      return;
+    }
+    try {
+      await deps.store.removeGrounding(vaultId, entryId, req.ownerUid, placeId);
+      res.status(200).json({ removed: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Domain freeze surfaces as 409 here (the store is the enforcer).
+      if (/frozen/.test(message)) {
+        sendError(res, 409, 'REFUSED: Grounding is frozen — a Reflection already exists.');
+        return;
+      }
+      storeError(res, err);
+    }
+  });
+
+  router.get('/:vaultId/places/:placeId', async (req: Request, res: Response) => {
+    const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
+    const placeId = pathParam(res, req.params.placeId, 'placeId');
+    if (vaultId === undefined || placeId === undefined) {
+      return;
+    }
+    if (!checkVault(res, vaultId, req)) {
+      return;
+    }
+    try {
+      const record = await deps.store.getCachedPlace(vaultId, placeId);
+      if (record === null) {
+        sendError(res, 404, 'place not cached');
+        return;
+      }
+      res.status(200).json({ details: detailsFromCache(placeId, record) });
     } catch (err) {
       storeError(res, err);
     }

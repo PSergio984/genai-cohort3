@@ -52,14 +52,6 @@ class FakeStore implements JournalStore {
     return e;
   }
 
-  async saveReflection(vaultId: string, entryId: string, ownerUid: string, text: string) {
-    const e = await this.getEntry(vaultId, entryId, ownerUid);
-    if (e === null) {
-      throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
-    }
-    this.entries.set(`${vaultId}/${entryId}`, { ...e, reflections: [...e.reflections, text] });
-  }
-
   async appendGrounding(vaultId: string, entryId: string, ownerUid: string, snapshot: GroundingSnapshot) {
     const e = await this.getEntry(vaultId, entryId, ownerUid);
     if (e === null) {
@@ -92,6 +84,38 @@ class FakeStore implements JournalStore {
     };
     this.cache.set(`${vaultId}/${placeId}`, record);
     return record;
+  }
+
+  async getCachedPlace(vaultId: string, placeId: string): Promise<PlaceCacheRecord | null> {
+    return this.cache.get(`${vaultId}/${placeId}`) ?? null;
+  }
+
+  async removeGrounding(vaultId: string, entryId: string, ownerUid: string, placeId: string): Promise<void> {
+    const e = await this.getEntry(vaultId, entryId, ownerUid);
+    if (e === null) {
+      throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
+    }
+    if (e.turns.some((t) => t.by === 'model')) {
+      throw new Error('REFUSED: Grounding is frozen — a Reflection already exists.');
+    }
+    this.entries.set(`${vaultId}/${entryId}`, {
+      ...e,
+      placeIds: e.placeIds.filter((id) => id !== placeId),
+      groundingSnapshots: e.groundingSnapshots.filter((s) => s.placeId !== placeId),
+    });
+  }
+
+  async appendTurns(
+    vaultId: string,
+    entryId: string,
+    ownerUid: string,
+    turns: Array<{ by: 'user' | 'model'; text: string; placeIds: readonly string[] }>,
+  ): Promise<void> {
+    const e = await this.getEntry(vaultId, entryId, ownerUid);
+    if (e === null) {
+      throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
+    }
+    this.entries.set(`${vaultId}/${entryId}`, { ...e, turns: [...e.turns, ...turns] });
   }
 }
 
@@ -303,8 +327,78 @@ describe('journal routes', () => {
     assert.equal(r2.status, 201);
     assert.equal(r2.json.reflection, 'second words');
     const listed = await get(`${url}/api/vaults/v1/entries`);
-    const body = listed.json as unknown as { entries: Array<{ entry: { reflections: string[] } }> };
-    assert.deepEqual(body.entries[0]?.entry.reflections, ['grounded words', 'second words']);
+    const body = listed.json as unknown as { entries: Array<{ entry: { turns: Array<{ by: string; text: string }> } }> };
+    assert.deepEqual(
+      body.entries[0]?.entry.turns,
+      [
+        { by: 'model', text: 'grounded words', placeIds: [] },
+        { by: 'model', text: 'second words', placeIds: [] },
+      ],
+    );
+  });
+
+  it('persists user follow-up turns with the entry placeIds', async () => {
+    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+    const id = created.json.id as string;
+    await post(`${url}/api/vaults/v1/entries/${id}/groundings`, { placeId: 'ChIJX' });
+    const r = await post(`${url}/api/vaults/v1/entries/${id}/reflections`, {
+      history: [{ by: 'user', text: 'what about the lake there?' }],
+    });
+    assert.equal(r.status, 201);
+    const listed = await get(`${url}/api/vaults/v1/entries`);
+    const body = listed.json as unknown as { entries: Array<{ entry: { turns: Array<{ by: string; text: string; placeIds: string[] }> } }> };
+    assert.deepEqual(body.entries[0]?.entry.turns, [
+      { by: 'user', text: 'what about the lake there?', placeIds: ['ChIJX'] },
+      { by: 'model', text: 'grounded words', placeIds: ['ChIJX'] },
+    ]);
+  });
+
+  it('removes a grounding before any reflection', async () => {
+    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+    const id = created.json.id as string;
+    await post(`${url}/api/vaults/v1/entries/${id}/groundings`, { placeId: 'ChIJX' });
+    const del = await fetch(`${url}/api/vaults/v1/entries/${id}/groundings/ChIJX`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer tok-v1' },
+    });
+    assert.equal(del.status, 200);
+    assert.deepEqual(await del.json(), { removed: true });
+    const listed = await get(`${url}/api/vaults/v1/entries`);
+    const body = listed.json as unknown as { entries: Array<{ entry: { placeIds: string[] } }> };
+    assert.deepEqual(body.entries[0]?.entry.placeIds, []);
+  });
+
+  it('refuses grounding removal after reflection, and 404s unknown entries', async () => {
+    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+    const id = created.json.id as string;
+    await post(`${url}/api/vaults/v1/entries/${id}/groundings`, { placeId: 'ChIJX' });
+    await post(`${url}/api/vaults/v1/entries/${id}/reflections`, {});
+    const frozen = await fetch(`${url}/api/vaults/v1/entries/${id}/groundings/ChIJX`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer tok-v1' },
+    });
+    assert.equal(frozen.status, 409);
+    const missing = await fetch(`${url}/api/vaults/v1/entries/nope/groundings/ChIJX`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer tok-v1' },
+    });
+    assert.equal(missing.status, 404);
+    const unauth = await fetch(`${url}/api/vaults/v1/entries/${id}/groundings/ChIJX`, { method: 'DELETE' });
+    assert.equal(unauth.status, 401);
+  });
+
+  it('serves cached place details without fetching', async () => {
+    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+    const id = created.json.id as string;
+    await post(`${url}/api/vaults/v1/entries/${id}/groundings`, { placeId: 'ChIJX' });
+    const hit = await get(`${url}/api/vaults/v1/places/ChIJX`);
+    assert.equal(hit.status, 200);
+    const details = hit.json.details as Record<string, unknown>;
+    assert.equal(details.name, 'Rizal Park');
+    assert.equal(details.address, 'Manila, Philippines');
+    assert.equal(details.attributions, 'Powered by Google');
+    const miss = await get(`${url}/api/vaults/v1/places/ChIJNOPE`);
+    assert.equal(miss.status, 404);
   });
 
   it('maps model failures to 429/502/500', async () => {

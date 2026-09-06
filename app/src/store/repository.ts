@@ -26,13 +26,25 @@ export interface GroundingSnapshot {
   readonly fetchedAt: string;
 }
 
+/**
+ * One message in a Session's thread. Model turns freeze the placeIds they
+ * saw at reflect time — the per-reflection audit trail (spec: "see the exact
+ * place snapshot a Reflection was based on"). User turns carry the entry's
+ * placeIds likewise (what the conversation could see).
+ */
+export interface TurnRecord {
+  readonly by: 'user' | 'model';
+  readonly text: string;
+  readonly placeIds: readonly string[];
+}
+
 export interface EntryRecord {
   readonly ownerUid: string;
   readonly text: string;
   readonly placeIds: readonly string[];
   readonly groundingSnapshots: readonly GroundingSnapshot[];
-  /** Append-only thread: every model reply is recorded, never overwritten. */
-  readonly reflections: readonly string[];
+  /** Append-only thread: every turn recorded, never overwritten. */
+  readonly turns: readonly TurnRecord[];
   readonly createdAt: string;
 }
 
@@ -60,8 +72,18 @@ export interface JournalStore {
   listEntries(vaultId: string, ownerUid: string, limit: number): Promise<EntryRef[]>;
   /** Read one Entry; null when missing OR owned by someone else (no oracle). */
   getEntry(vaultId: string, entryId: string, ownerUid: string): Promise<EntryRecord | null>;
-  /** Append a Reflection text to an Entry. */
-  saveReflection(vaultId: string, entryId: string, ownerUid: string, text: string): Promise<void>;
+  /**
+   * Append Turns to an Entry's thread (user follow-ups and/or the model
+   * reply). Verifies ownership first. Transactional: identical repeat texts
+   * are distinct turns and must all be recorded.
+   */
+  appendTurns(vaultId: string, entryId: string, ownerUid: string, turns: TurnRecord[]): Promise<void>;
+  /**
+   * Remove one Grounding by place id (fixes a wrong pick). Refuses once any
+   * model turn exists — the first Reflection seals the Groundings.
+   * Idempotent on unknown placeIds.
+   */
+  removeGrounding(vaultId: string, entryId: string, ownerUid: string, placeId: string): Promise<void>;
   /**
    * Append a frozen Grounding snapshot to an Entry (idempotent on placeId).
    * Verifies entry ownership first — the Admin SDK bypasses firestore.rules.
@@ -84,4 +106,9 @@ export interface JournalStore {
     fetch: (placeId: string) => Promise<FetchedPlace>,
     nowMs?: number,
   ): Promise<PlaceCacheRecord>;
+  /**
+   * Cache read for display (history, inline cards): returns the stored
+   * record or null. Never fetches — display reads cost zero API quota.
+   */
+  getCachedPlace(vaultId: string, placeId: string): Promise<PlaceCacheRecord | null>;
 }

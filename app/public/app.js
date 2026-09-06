@@ -163,61 +163,107 @@ async function attachPlace(p) {
   } catch (err) { alert('Attach failed: ' + err.message); }
 }
 
-function renderAttached() {
-  var ul = byId('attached');
-  ul.innerHTML = '';
-  attached.forEach(function (s) {
-    var li = document.createElement('li');
-    li.appendChild(document.createTextNode(s.name + ' — ' + s.address));
-    var meta = document.createElement('div');
-    meta.className = 'meta';
-    meta.textContent = s.attributions || '';
-    li.appendChild(meta);
-    ul.appendChild(li);
-  });
-}
+  function renderAttached() {
+    var ul = byId('attached');
+    ul.innerHTML = '';
+    attached.forEach(function (s) {
+      var li = document.createElement('li');
+      li.appendChild(document.createTextNode(s.name + ' — ' + s.address));
+      var meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = s.attributions || '';
+      li.appendChild(meta);
+      var row = document.createElement('div');
+      var details = document.createElement('button');
+      details.type = 'button';
+      details.textContent = 'Details';
+      details.addEventListener('click', function () { toggleDetails(li, s.placeId, details); });
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', function () { removeGrounding(s.placeId); });
+      row.appendChild(details);
+      row.appendChild(remove);
+      li.appendChild(row);
+      ul.appendChild(li);
+    });
+  }
 
-byId('reflect').addEventListener('click', async function () {
-  if (!entryId) return;
-  try {
-    var out = await postJson(entryPath(entryId) + '/reflections', {});
-    renderReflections([out.reflection]);
-    await refreshHistory();
-  } catch (err) { alert('Reflect failed: ' + err.message); }
-});
+  async function toggleDetails(li, placeId, button) {
+    var open = li.querySelector('.details');
+    if (open) { open.remove(); button.textContent = 'Details'; return; }
+    try {
+      var out = await api(entryPath(entryId).replace(/\/entries\/[^/]+$/, '') + '/places/' + encodeURIComponent(placeId));
+      var d = out.details || {};
+      var div = document.createElement('div');
+      div.className = 'details meta';
+      var lines = [];
+      if (typeof d.rating === 'number') lines.push('Rating: ' + d.rating);
+      if (Array.isArray(d.hours)) lines.push('Hours: ' + d.hours.join('; '));
+      lines.push(d.attributions || '');
+      div.textContent = lines.join(' · ');
+      li.appendChild(div);
+      button.textContent = 'Hide';
+    } catch (err) { alert('Details failed: ' + err.message); }
+  }
 
-function renderReflections(reflections) {
-  var div = byId('reflections');
-  div.innerHTML = '';
-  (reflections || []).forEach(function (t) {
-    var p = document.createElement('div');
-    p.className = 'reflection';
-    p.textContent = t;
-    div.appendChild(p);
+  async function removeGrounding(placeId) {
+    if (!entryId) return;
+    try {
+      await api(entryPath(entryId) + '/groundings/' + encodeURIComponent(placeId), { method: 'DELETE' });
+      attached = attached.filter(function (s) { return s.placeId !== placeId; });
+      renderAttached();
+      await refreshHistory();
+    } catch (err) { alert('Remove failed: ' + err.message); }
+  }
+
+  async function loadThread() {
+    var out = await api(entriesPath() + '?limit=100');
+    var found = (out.entries || []).filter(function (e) { return e.id === entryId; })[0];
+    renderThread(found ? found.entry.turns : []);
+  }
+
+  function renderThread(turns) {
+    var div = byId('reflections');
+    div.innerHTML = '';
+    (turns || []).forEach(function (t) {
+      var p = document.createElement('div');
+      p.className = 'reflection';
+      p.textContent = (t.by === 'user' ? 'You: ' : 'Gemini: ') + t.text;
+      div.appendChild(p);
+    });
+  }
+
+  byId('reflect').addEventListener('click', async function () {
+    if (!entryId) return;
+    try {
+      await postJson(entryPath(entryId) + '/reflections', {});
+      await loadThread();
+      await refreshHistory();
+    } catch (err) { alert('Reflect failed: ' + err.message); }
   });
-}
 
 async function refreshHistory() {
   try {
     var out = await api(entriesPath() + '?limit=20');
     var ul = byId('history');
     ul.innerHTML = '';
-    (out.entries || []).forEach(function (row) {
-      var li = document.createElement('li');
-      li.appendChild(document.createTextNode(row.entry.text));
-      var meta = document.createElement('div');
-      meta.className = 'meta';
-      var places = (row.entry.groundingSnapshots || []).map(function (s) { return s.name; }).join(', ');
-      meta.textContent = places ? 'Grounded in: ' + places : 'Ungrounded';
-      li.appendChild(meta);
-      (row.entry.reflections || []).forEach(function (t) {
-        var p = document.createElement('div');
-        p.className = 'reflection';
-        p.textContent = t;
-        li.appendChild(p);
+      (out.entries || []).forEach(function (row) {
+        var li = document.createElement('li');
+        li.appendChild(document.createTextNode(row.entry.text));
+        var meta = document.createElement('div');
+        meta.className = 'meta';
+        var places = (row.entry.groundingSnapshots || []).map(function (s) { return s.name; }).join(', ');
+        meta.textContent = places ? 'Grounded in: ' + places : 'Ungrounded';
+        li.appendChild(meta);
+        (row.entry.turns || []).forEach(function (t) {
+          var p = document.createElement('div');
+          p.className = 'reflection';
+          p.textContent = (t.by === 'user' ? 'You: ' : 'Gemini: ') + t.text;
+          li.appendChild(p);
+        });
+        ul.appendChild(li);
       });
-      ul.appendChild(li);
-    });
   } catch (err) { /* history is best-effort on first load */ }
 }
 

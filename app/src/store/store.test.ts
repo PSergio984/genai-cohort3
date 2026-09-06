@@ -36,7 +36,7 @@ function entry(over: Partial<EntryRecord> = {}): EntryRecord {
     text: 'seed entry',
     placeIds: [],
     groundingSnapshots: [],
-    reflections: [],
+    turns: [],
     createdAt: iso(T0),
     ...over,
   };
@@ -209,41 +209,106 @@ describe('saveEntry / listEntries', () => {
     assert.equal(await store.getEntry(v, id, 'bob'), null);
   });
 
-  it('saveReflection stores text on the entry', async () => {
+  it('appendTurns stores user and model turns with audit placeIds', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
-    await store.saveReflection(v, id, 'alice', 'grounded words');
+    await store.appendTurns(v, id, 'alice', [
+      { by: 'user', text: 'follow-up?', placeIds: [] },
+      { by: 'model', text: 'grounded words', placeIds: ['ChIJX'] },
+    ]);
     const listed = await store.listEntries(v, 'alice', 10);
-    assert.deepEqual(listed[0]?.entry.reflections, ['grounded words']);
+    assert.deepEqual(listed[0]?.entry.turns, [
+      { by: 'user', text: 'follow-up?', placeIds: [] },
+      { by: 'model', text: 'grounded words', placeIds: ['ChIJX'] },
+    ]);
   });
 
-  it('repeat reflects extend the thread, never overwrite', async () => {
+  it('repeat identical turns are all recorded', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
-    await store.saveReflection(v, id, 'alice', 'first');
-    await store.saveReflection(v, id, 'alice', 'second');
+    await store.appendTurns(v, id, 'alice', [{ by: 'model', text: 'same words', placeIds: [] }]);
+    await store.appendTurns(v, id, 'alice', [{ by: 'model', text: 'same words', placeIds: [] }]);
     const listed = await store.listEntries(v, 'alice', 10);
-    assert.deepEqual(listed[0]?.entry.reflections, ['first', 'second']);
+    assert.deepEqual(
+      listed[0]?.entry.turns.map((t) => t.text),
+      ['same words', 'same words'],
+    );
   });
 
-  it('identical repeat replies are both recorded', async () => {
+  it('appendTurns with an empty batch is a no-op', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
-    await store.saveReflection(v, id, 'alice', 'same words');
-    await store.saveReflection(v, id, 'alice', 'same words');
+    await store.appendTurns(v, id, 'alice', []);
     const listed = await store.listEntries(v, 'alice', 10);
-    assert.deepEqual(listed[0]?.entry.reflections, ['same words', 'same words']);
+    assert.deepEqual(listed[0]?.entry.turns, []);
   });
 
-  it('saveReflection by another owner rejects', async () => {
+  it('appendTurns by another owner rejects', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
-    await assert.rejects(store.saveReflection(v, id, 'bob', 'hijack'), /owner mismatch/);
+    await assert.rejects(
+      store.appendTurns(v, id, 'bob', [{ by: 'user', text: 'hijack', placeIds: [] }]),
+      /owner mismatch/,
+    );
   });
 
-  it('saveReflection on a missing entry rejects', async () => {
+  it('appendTurns on a missing entry rejects', async () => {
     const v = freshVault();
-    await assert.rejects(store.saveReflection(v, 'nope', 'alice', 'x'), /not found/);
+    await assert.rejects(
+      store.appendTurns(v, 'nope', 'alice', [{ by: 'user', text: 'x', placeIds: [] }]),
+      /not found/,
+    );
+  });
+
+  it('removeGrounding drops one place before any model turn', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    const snap = {
+      placeId: 'ChIJX',
+      name: 'Rizal Park',
+      address: 'Manila',
+      attributions: 'Powered by Google',
+      fetchedAt: iso(T0),
+    };
+    await store.appendGrounding(v, id, 'alice', snap);
+    await store.appendGrounding(v, id, 'alice', { ...snap, placeId: 'ChIJY', name: 'Cafe' });
+    await store.removeGrounding(v, id, 'alice', 'ChIJX');
+    const listed = await store.listEntries(v, 'alice', 10);
+    assert.deepEqual(listed[0]?.entry.placeIds, ['ChIJY']);
+    assert.equal(listed[0]?.entry.groundingSnapshots.length, 1);
+  });
+
+  it('removeGrounding an unattached place is a no-op', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await store.removeGrounding(v, id, 'alice', 'ChIJNOPE');
+    const listed = await store.listEntries(v, 'alice', 10);
+    assert.deepEqual(listed[0]?.entry.placeIds, []);
+  });
+
+  it('removeGrounding after a model turn refuses (frozen)', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await store.appendGrounding(v, id, 'alice', {
+      placeId: 'ChIJX',
+      name: 'Rizal Park',
+      address: 'Manila',
+      attributions: 'Powered by Google',
+      fetchedAt: iso(T0),
+    });
+    await store.appendTurns(v, id, 'alice', [{ by: 'model', text: 'r1', placeIds: ['ChIJX'] }]);
+    await assert.rejects(store.removeGrounding(v, id, 'alice', 'ChIJX'), /frozen/);
+  });
+
+  it('removeGrounding by another owner rejects', async () => {
+    const v = freshVault();
+    const id = await store.saveEntry(v, entry());
+    await assert.rejects(store.removeGrounding(v, id, 'bob', 'ChIJX'), /owner mismatch/);
+  });
+
+  it('removeGrounding on a missing entry rejects', async () => {
+    const v = freshVault();
+    await assert.rejects(store.removeGrounding(v, 'nope', 'alice', 'ChIJX'), /not found/);
   });
 });
 
@@ -312,5 +377,26 @@ describe('getPlace read-through cache', () => {
       }),
       /maps down/,
     );
+  });
+
+  it('getCachedPlace returns the stored record without fetching', async () => {
+    const v = freshVault();
+    let calls = 0;
+    await store.getPlace(
+      v,
+      'p1',
+      async () => {
+        calls++;
+        return { placeJson: { name: 'Cached' }, fetchedAtMs: T0 };
+      },
+      T0,
+    );
+    const got = await store.getCachedPlace(v, 'p1');
+    assert.deepEqual((got?.placeJson as { name: string }).name, 'Cached');
+    assert.equal(calls, 1);
+  });
+
+  it('getCachedPlace is null on a miss', async () => {
+    assert.equal(await store.getCachedPlace(freshVault(), 'nope'), null);
   });
 });

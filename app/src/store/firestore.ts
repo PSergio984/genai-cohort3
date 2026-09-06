@@ -78,13 +78,14 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
       return data;
     },
 
-    async saveReflection(vaultId, entryId, ownerUid, text): Promise<void> {
+    async appendTurns(vaultId, entryId, ownerUid, turns): Promise<void> {
       // Defense in depth: the Admin SDK bypasses firestore.rules, so the
       // store verifies ownership itself instead of trusting the caller.
-      // (Owner identity is enforced by the rules on the merged document
-      // for client paths; this guard covers server paths.)
       // Transactional read-modify-write (not arrayUnion): identical repeat
-      // replies are distinct Reflections and must both be recorded.
+      // texts are distinct turns and must all be recorded.
+      if (turns.length === 0) {
+        return;
+      }
       const ref = entriesCol(db, vaultId).doc(entryId);
       await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
@@ -95,7 +96,30 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
         if (data.ownerUid !== ownerUid) {
           throw new Error(`owner mismatch: entry belongs to another Vault owner`);
         }
-        tx.update(ref, { reflections: [...(data.reflections ?? []), text] });
+        tx.update(ref, { turns: [...(data.turns ?? []), ...turns] });
+      });
+    },
+
+    async removeGrounding(vaultId, entryId, ownerUid, placeId): Promise<void> {
+      const ref = entriesCol(db, vaultId).doc(entryId);
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const data = snap.data() as EntryRecord | undefined;
+        if (data === undefined) {
+          throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
+        }
+        if (data.ownerUid !== ownerUid) {
+          throw new Error(`owner mismatch: entry belongs to another Vault owner`);
+        }
+        // Domain freeze rule, enforced server-side too: the first model
+        // turn seals the Groundings (the route checks first for a clean 409).
+        if (data.turns.some((t) => t.by === 'model')) {
+          throw new Error(`REFUSED: Grounding is frozen — a Reflection already exists.`);
+        }
+        tx.update(ref, {
+          placeIds: data.placeIds.filter((id) => id !== placeId),
+          groundingSnapshots: data.groundingSnapshots.filter((s) => s.placeId !== placeId),
+        });
       });
     },
 
@@ -122,6 +146,14 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
           groundingSnapshots: FieldValue.arrayUnion({ ...snapshot }),
         });
       });
+    },
+
+    async getCachedPlace(vaultId, placeId): Promise<PlaceCacheRecord | null> {
+      const snap = await placeDoc(db, vaultId, placeId).get();
+      if (!snap.exists) {
+        return null;
+      }
+      return snap.data() as PlaceCacheRecord;
     },
 
     async getPlace(vaultId, placeId, fetch, nowMs = Date.now()): Promise<PlaceCacheRecord> {
