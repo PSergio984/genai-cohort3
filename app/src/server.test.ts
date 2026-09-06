@@ -95,4 +95,26 @@ describe('server', () => {
     const body = await res.text();
     assert.ok(body.includes('"apiKey":null'));
   });
+
+  it('serves the browser Maps key for the map view, null when unset', async () => {
+    process.env.MAPS_BROWSER_KEY = 'test-browser-key';
+    try {
+      const address = server?.address();
+      assert.ok(address !== null && typeof address === 'object');
+      const res = await fetch(`http://127.0.0.1:${address.port}/maps-config.js`);
+      assert.equal(res.status, 200);
+      assert.ok((res.headers.get('content-type') ?? '').includes('javascript'));
+      const body = await res.text();
+      assert.ok(body.includes('window.__MAPS_CONFIG__='));
+      assert.ok(body.includes('test-browser-key'));
+    } finally {
+      delete process.env.MAPS_BROWSER_KEY;
+    }
+    const address = server?.address();
+    assert.ok(address !== null && typeof address === 'object');
+    const res = await fetch(`http://127.0.0.1:${address.port}/maps-config.js`);
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.ok(body.includes('"browserKey":null'));
+  });
 });

@@ -30,6 +30,8 @@ export interface PlaceDetails {
   readonly attributions: string;
   readonly rating?: number;
   readonly hours?: readonly string[];
+  /** Cached coordinates for map pins; absent until a location-bearing fetch. */
+  readonly location?: { readonly latitude: number; readonly longitude: number };
   readonly photos?: readonly unknown[];
   readonly reviews?: readonly unknown[];
   readonly editorialSummary?: string;
@@ -52,6 +54,7 @@ interface PlacesResponse {
   formattedAddress?: string;
   rating?: number;
   regularOpeningHours?: { weekdayDescriptions?: string[] };
+  location?: { latitude?: number; longitude?: number };
   photos?: unknown[];
   reviews?: unknown[];
   editorialSummary?: { text?: string };
@@ -108,6 +111,10 @@ export async function fetchPlaceDetails(
     address: body.formattedAddress ?? '',
     attributions: resolveAttributions(body),
     ...(body.rating !== undefined ? { rating: body.rating } : {}),
+    ...(typeof body.location?.latitude === 'number' &&
+    typeof body.location?.longitude === 'number'
+      ? { location: { latitude: body.location.latitude, longitude: body.location.longitude } }
+      : {}),
     ...(body.regularOpeningHours?.weekdayDescriptions !== undefined
       ? { hours: body.regularOpeningHours.weekdayDescriptions }
       : {}),

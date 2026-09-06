@@ -36,6 +36,8 @@ export interface Prediction {
 export interface PlaceDetails extends GroundingSnapshot {
   rating?: number;
   hours?: string[];
+  /** Present once a location-bearing fetch populated the cache. */
+  location?: { latitude: number; longitude: number };
 }
 
 export type StatusTone = 'ok' | 'error' | 'busy';
@@ -46,3 +48,12 @@ export interface Status {
 }
 
 export type HistoryFilter = 'all' | 'grounded' | 'ungrounded';
+
+/** Distinct groundings by place, first-seen order (map pins + counts). */
+export function dedupeSnapshots(snapshots: GroundingSnapshot[]): GroundingSnapshot[] {
+  const seen = new Map<string, GroundingSnapshot>();
+  for (const s of snapshots) {
+    if (!seen.has(s.placeId)) seen.set(s.placeId, s);
+  }
+  return [...seen.values()];
+}

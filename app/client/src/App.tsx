@@ -16,12 +16,14 @@ import type {
   Status,
   Turn,
 } from './types.js';
+import { dedupeSnapshots } from './types.js';
 import { StatusLine } from './components/StatusLine.js';
 import { Auth } from './components/Auth.js';
 import { Write } from './components/Write.js';
 import { Ground } from './components/Ground.js';
 import { Reflect } from './components/Reflect.js';
-import { History } from './components/History.js';
+import { History, type HistoryView } from './components/History.js';
+import { MapPane } from './components/MapPane.js';
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -43,7 +45,7 @@ export function App(): JSX.Element {
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [filter, setFilter] = useState<HistoryFilter>('all');
-  const [mapNote, setMapNote] = useState(false);
+  const [historyView, setHistoryView] = useState<HistoryView>('list');
 
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   // The query a completed autocomplete round answered. The empty-result
@@ -78,7 +80,7 @@ export function App(): JSX.Element {
     setHistory([]);
     setHistoryLoading(false);
     setFilter('all');
-    setMapNote(false);
+    setHistoryView('list');
     setPredictions([]);
     setResolvedQuery('');
     setDetails({});
@@ -334,6 +336,33 @@ export function App(): JSX.Element {
     });
   }, [history, filter]);
 
+  // Every distinct grounded place across history (for the map) + the
+  // ungrounded count the map keeps aside. Locations resolve cache-only.
+  const mapSnapshots = useMemo(() => {
+    const all: GroundingSnapshot[] = [];
+    for (const row of history) {
+      all.push(...(row.entry.groundingSnapshots ?? []));
+    }
+    return dedupeSnapshots(all);
+  }, [history]);
+
+  const ungroundedCount = useMemo(
+    () => history.filter((row) => (row.entry.groundingSnapshots ?? []).length === 0).length,
+    [history],
+  );
+
+  const fetchPlaceDetails = useCallback(
+    async (placeId: string): Promise<PlaceDetails | null> => {
+      if (api === null) return null;
+      try {
+        return await api.getPlaceDetails(placeId);
+      } catch {
+        return null;
+      }
+    },
+    [api],
+  );
+
   const signedInName =
     user === null ? '' : (user.displayName ?? user.email ?? 'Signed in');
 
@@ -398,15 +427,22 @@ export function App(): JSX.Element {
             onFilter={setFilter}
             onRefresh={() => void refreshHistory()}
             refreshing={refreshing}
-            mapNote={mapNote}
-            onMapNote={() => {
-              setMapNote(true);
-              announce(
-                'Map view needs the browser key — list below is complete and free to revisit.',
-                'busy',
-              );
-            }}
-            onHideMapNote={() => setMapNote(false)}
+            view={historyView}
+            onViewChange={setHistoryView}
+            mapPane={
+              <MapPane
+                snapshots={mapSnapshots}
+                ungroundedCount={ungroundedCount}
+                fetchDetails={(id) => fetchPlaceDetails(id)}
+                onDegraded={(message) => {
+                  // The pane cannot show its promise (no key, load failure,
+                  // nothing pinnable): fall back to the list so its note
+                  // never stands alone without entries below it.
+                  setHistoryView('list');
+                  announce(message, 'busy');
+                }}
+              />
+            }
             selectedId={entryId}
             onOpen={(id) => void handleOpen(id)}
           />

@@ -54,7 +54,16 @@ export function createApp(deps?: AppDeps): Express {
       })};`,
     );
   });
-  // Static frontend (Vite build output): index + assets.
+  // Browser Maps key for the history map view (referrer-restricted public
+  // identifier — same delivery shape as the Firebase web config above).
+  // Null when unset; the client degrades to the list with an honest note.
+  app.get('/maps-config.js', (_req: Request, res: Response) => {
+    res.type('application/javascript').send(
+      `window.__MAPS_CONFIG__=${JSON.stringify({
+        browserKey: process.env.MAPS_BROWSER_KEY ?? null,
+      })};`,
+    );
+  });
   const publicDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
   app.use(express.static(publicDir));
   return app;

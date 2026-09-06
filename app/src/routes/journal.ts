@@ -102,17 +102,30 @@ function storeError(res: Response, err: unknown): void {
 }
 
 /** Display view over a cached record: snapshot fields plus inline card
- *  facts when the cached payload carries them. Never fetches (zero quota). */
+ *  facts when the cached payload carries them. Never fetches (zero quota):
+ *  records cached before location-bearing fetches stay pin-less (their
+ *  coordinates arrive only when a fresh grounding re-caches the place). */
 export function detailsFromCache(placeId: string, record: PlaceCacheRecord): PlaceDetails {
   const snap = snapshotFromCache(placeId, record);
   const obj = parsePlaceJson(record.placeJson);
+  const location = parseLocation(obj.location);
   return {
     ...snap,
     ...(typeof obj.rating === 'number' ? { rating: obj.rating } : {}),
     ...(Array.isArray(obj.hours) && obj.hours.every((h): h is string => typeof h === 'string')
       ? { hours: obj.hours }
       : {}),
+    ...(location !== undefined ? { location } : {}),
   };
+}
+
+/** Coordinates survive only as a complete latitude/longitude pair. */
+function parseLocation(value: unknown): PlaceDetails['location'] {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { latitude, longitude } = value as { latitude?: unknown; longitude?: unknown };
+  return typeof latitude === 'number' && typeof longitude === 'number'
+    ? { latitude, longitude }
+    : undefined;
 }
 
 /** Parse the cached payload once; unknown shapes degrade to blanks. */
@@ -276,7 +289,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
         return;
       }
       // New user turns from this call persist with the entry's placeIds
-      // (what the conversation can see); history is per-call deltas only.
+      // (what the Session can see); history is per-call deltas only.
       const newUserTurns: TurnRecord[] = (history ?? []).map((t) => ({ ...t, placeIds: [...entry.placeIds] }));
       let reflection: string;
       try {
@@ -320,7 +333,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
       return;
     }
     try {
-      // Honest 404 for places that were never attached: silent no-ops mask
+      // Honest 404 for places that were never grounded: silent no-ops mask
       // caller bugs, while the store stays idempotent for safe retries.
       const entry = await deps.store.getEntry(vaultId, entryId, req.ownerUid);
       if (entry === null) {
@@ -328,7 +341,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
         return;
       }
       if (!entry.placeIds.includes(placeId)) {
-        sendError(res, 404, 'place not attached');
+        sendError(res, 404, 'place not grounded');
         return;
       }
       await deps.store.removeGrounding(vaultId, entryId, req.ownerUid, placeId);

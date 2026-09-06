@@ -91,6 +91,21 @@ describe('fetchPlaceDetails', () => {
     assert.equal(d.name, 'Rizal Park');
   });
 
+  it('keeps location through CORE normalization for map pins', async () => {
+    const { impl } = fakeFetch({
+      ...FULL_BODY,
+      location: { latitude: 14.5826, longitude: 120.9783 },
+    });
+    const d = await fetchPlaceDetails('ChIJX', CORE_MASK, { apiKey: 'k', fetchImpl: impl });
+    assert.deepEqual(d.location, { latitude: 14.5826, longitude: 120.9783 });
+  });
+
+  it('partial location degrades to no field, never crashes', async () => {
+    const { impl } = fakeFetch({ ...FULL_BODY, location: { latitude: 14.5 } });
+    const d = await fetchPlaceDetails('ChIJX', CORE_MASK, { apiKey: 'k', fetchImpl: impl });
+    assert.equal(d.location, undefined);
+  });
+
   it('provider attributions propagate when present', async () => {
     const { impl } = fakeFetch({ ...FULL_BODY, attributions: [{ provider: 'Listings Co' }, 'City Guide'] });
     const d = await fetchPlaceDetails('ChIJX', CORE_MASK, { apiKey: 'k', fetchImpl: impl });

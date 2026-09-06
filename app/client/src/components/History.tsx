@@ -1,7 +1,9 @@
-import type { JSX } from 'react';
+import type { JSX, ReactNode } from 'react';
 import type { HistoryFilter, HistoryRow } from '../types.js';
 import { formatTurn } from './Reflect.js';
 import { PinGlyph } from './Pin.js';
+
+export type HistoryView = 'list' | 'map';
 
 interface HistoryProps {
   rows: HistoryRow[];
@@ -11,9 +13,9 @@ interface HistoryProps {
   onFilter: (filter: HistoryFilter) => void;
   onRefresh: () => void;
   refreshing: boolean;
-  mapNote: boolean;
-  onMapNote: () => void;
-  onHideMapNote: () => void;
+  view: HistoryView;
+  onViewChange: (view: HistoryView) => void;
+  mapPane: ReactNode;
   selectedId: string | null;
   onOpen: (id: string) => void;
 }
@@ -26,9 +28,9 @@ export function History({
   onFilter,
   onRefresh,
   refreshing,
-  mapNote,
-  onMapNote,
-  onHideMapNote,
+  view,
+  onViewChange,
+  mapPane,
   selectedId,
   onOpen,
 }: HistoryProps): JSX.Element {
@@ -65,27 +67,18 @@ export function History({
           </button>
         </span>
         <span className="seg" role="group" aria-label="History view">
-          <button type="button" aria-pressed={!mapNote} onClick={onHideMapNote}>
+          <button type="button" aria-pressed={view === 'list'} onClick={() => onViewChange('list')}>
             List
           </button>
-          <button
-            type="button"
-            aria-pressed={false}
-            title="Map pins need a referrer-restricted browser key (human console step)."
-            onClick={onMapNote}
-          >
+          <button type="button" aria-pressed={view === 'map'} onClick={() => onViewChange('map')}>
             Map
           </button>
         </span>
       </div>
-      {mapNote ? (
-        <p className="mapnote">
-          Map view arrives with the browser key — history below is the complete record, free to
-          revisit (reads are cache-only, zero quota).
-        </p>
-      ) : null}
       <p className="hint">Revisiting history is free — display reads are cache-only and never burn quota.</p>
-      {loading ? (
+      {view === 'map' ? (
+        mapPane
+      ) : loading ? (
         <div aria-label="Loading history">
           <div className="skeleton" aria-hidden="true">
             <span />

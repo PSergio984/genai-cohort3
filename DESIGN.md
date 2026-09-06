@@ -190,6 +190,10 @@ Functional 3px radius on buttons, inputs, turns, and panels; square (0) suggesti
 ### Status line
 - **Style:** a single polite live region under the masthead; secondary ink at rest, leaf confirmations, sealing-wax errors, muted busy narration.
 
+### Map view
+- **Style:** a neutral-ground map field (22rem, hairlined) carrying accent pins; place names surface in sheet-white info windows on click; a tabular meta line counts pinned, pre-pin legacy, and ungrounded-aside entries.
+- **State:** locations resolve from the Vault cache only (zero Places quota); pre-pin groundings stay listed with an honest legacy line; missing key or failed library load degrades to the list with the reason stated.
+
 ## Do's and Don'ts
 
 ### Do:

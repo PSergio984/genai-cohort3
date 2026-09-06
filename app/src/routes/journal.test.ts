@@ -318,7 +318,7 @@ describe('journal routes', () => {
     assert.equal(frozen.status, 409);
   });
 
-  it('repeat reflects extend the thread', async () => {
+  it('repeat reflects extend the Session', async () => {
     const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
     const id = created.json.id as string;
     await post(`${url}/api/vaults/v1/entries/${id}/reflections`, {});
@@ -386,7 +386,7 @@ describe('journal routes', () => {
     assert.equal(unauth.status, 401);
   });
 
-  it('removing a never-attached place 404s instead of silently succeeding', async () => {
+  it('removing a never-grounded place 404s instead of silently succeeding', async () => {
     const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
     const id = created.json.id as string;
     const r = await fetch(`${url}/api/vaults/v1/entries/${id}/groundings/ChIJNOPE`, {
@@ -394,10 +394,10 @@ describe('journal routes', () => {
       headers: { Authorization: 'Bearer tok-v1' },
     });
     assert.equal(r.status, 404);
-    assert.deepEqual(await r.json(), { error: 'place not attached' });
+    assert.deepEqual(await r.json(), { error: 'place not grounded' });
   });
 
-  it('reads a single entry with its thread', async () => {
+  it('reads a single entry with its turns', async () => {
     const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
     const id = created.json.id as string;
     await post(`${url}/api/vaults/v1/entries/${id}/groundings`, { placeId: 'ChIJX' });
@@ -433,6 +433,63 @@ describe('journal routes', () => {
     assert.equal(details.attributions, 'Powered by Google');
     const miss = await get(`${url}/api/vaults/v1/places/ChIJNOPE`);
     assert.equal(miss.status, 404);
+  });
+
+  it('serves cached coordinates for map pins once a location-bearing fetch lands', async () => {
+    const store = new FakeStore();
+    const locatedApp = express();
+    locatedApp.use(express.json());
+    locatedApp.use(
+      '/api/vaults',
+      createJournalRouter({
+        store,
+        fetchPlace: (async (placeId: string) => ({
+          placeJson: {
+            ...PLACE_JSON,
+            placeId,
+            location: { latitude: 14.5826, longitude: 120.9783 },
+          },
+          fetchedAtMs: T0,
+        })) as JournalDeps['fetchPlace'],
+        gemini: geminiOk(),
+        verify: fakeVerify,
+      }),
+    );
+    // A second server alongside the shared one: the shared base stays up for
+    // the pre-location assertion at the end.
+    let extra: Server | undefined;
+    const base2 = await new Promise<string>((resolve, reject) => {
+      extra = locatedApp.listen(0, '127.0.0.1', () => {
+        const a = extra?.address();
+        if (a === null || a === undefined || typeof a === 'string') {
+          reject(new Error('no address'));
+          return;
+        }
+        resolve(`http://127.0.0.1:${a.port}`);
+      });
+    });
+    try {
+      const created = await post(`${base2}/api/vaults/v3/entries`, { text: 'here' }, 'Bearer tok-v3');
+      const eid = created.json.id as string;
+      await post(`${base2}/api/vaults/v3/entries/${eid}/groundings`, { placeId: 'ChIJX' }, 'Bearer tok-v3');
+      const hit = await get(`${base2}/api/vaults/v3/places/ChIJX`, 'Bearer tok-v3');
+      assert.equal(hit.status, 200);
+      assert.deepEqual((hit.json.details as Record<string, unknown>).location, {
+        latitude: 14.5826,
+        longitude: 120.9783,
+      });
+    } finally {
+      extra?.closeAllConnections();
+      await new Promise<void>((resolve) => extra?.close(() => resolve()));
+    }
+    // Pre-location cache records stay pin-less, never crash: the shared base
+    // caches the location-free PLACE_JSON fixture.
+    const legacyCreated = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+    const legacyId = legacyCreated.json.id as string;
+    await post(`${url}/api/vaults/v1/entries/${legacyId}/groundings`, { placeId: 'ChIJX' });
+    const legacy = await get(`${url}/api/vaults/v1/places/ChIJX`);
+    assert.equal(legacy.status, 200);
+    assert.equal((legacy.json.details as Record<string, unknown>).location, undefined);
   });
 
   it('maps model failures to 429/502/500', async () => {

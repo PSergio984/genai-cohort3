@@ -21,10 +21,12 @@ jobs:
     #   project + roles/iam.serviceAccountUser on the runtime SA below.
     #   (Workload Identity Federation is the nicer long-term option.)
     # Required repo Variables (Settings → Variables → Actions) — Firebase web
-    # config (public identifiers, but secret-scanner hostile, so never in files):
+    # config + Maps browser key (public identifiers, but secret-scanner
+    # hostile, so never in files):
     #   VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN,
-    #   VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_APP_ID
-    #   (values: Firebase console → Project settings → Your apps).
+    #   VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_APP_ID, MAPS_BROWSER_KEY
+    #   (values: Firebase console → Project settings → Your apps; Maps key:
+    #   console Credentials → referrer-restricted browser key).
     # They ride --set-env-vars (runtime, proven path) into the server-rendered
     # /firebase-config.js route — NOT --set-build-env-vars, which never reaches
     # Dockerfile ARG (verified live 2026-09-06: bundle baked undefined).
@@ -75,7 +77,8 @@ jobs:
       # bindings ride one --update-secrets (slash-prefixed = volume, else env).
       # PROJECT_ID rides --set-env-vars (different flag group, so combinable):
       # without it wireJournal() degrades to health-only and /api/vaults 404s.
-      # Firebase web config rides the same flag into /firebase-config.js.
+      # Firebase web config + Maps browser key ride the same flag into the
+      # server-rendered /firebase-config.js and /maps-config.js routes.
       - name: Deploy to Cloud Run
         if: steps.creds.outputs.skip != 'true'
         run: >
@@ -84,7 +87,7 @@ jobs:
           --region us-central1
           --allow-unauthenticated
           --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest
-          --set-env-vars=PROJECT_ID=valid-meridian-475214-e3,FIREBASE_WEB_API_KEY=${{ vars.VITE_FIREBASE_API_KEY }},FIREBASE_WEB_AUTH_DOMAIN=${{ vars.VITE_FIREBASE_AUTH_DOMAIN }},FIREBASE_WEB_PROJECT_ID=${{ vars.VITE_FIREBASE_PROJECT_ID }},FIREBASE_WEB_APP_ID=${{ vars.VITE_FIREBASE_APP_ID }}
+          --set-env-vars=PROJECT_ID=valid-meridian-475214-e3,FIREBASE_WEB_API_KEY=${{ vars.VITE_FIREBASE_API_KEY }},FIREBASE_WEB_AUTH_DOMAIN=${{ vars.VITE_FIREBASE_AUTH_DOMAIN }},FIREBASE_WEB_PROJECT_ID=${{ vars.VITE_FIREBASE_PROJECT_ID }},FIREBASE_WEB_APP_ID=${{ vars.VITE_FIREBASE_APP_ID }},MAPS_BROWSER_KEY=${{ vars.MAPS_BROWSER_KEY }}
           --service-account=273533786531-compute@developer.gserviceaccount.com
           --labels=challenge=codelab,app=grounded-journal
           --max-instances=4
