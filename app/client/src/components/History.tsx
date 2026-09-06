@@ -76,9 +76,10 @@ export function History({
         </span>
       </div>
       <p className="hint">Revisiting history is free — display reads are cache-only and never burn quota.</p>
-      {view === 'map' ? (
-        mapPane
-      ) : loading ? (
+      {/* Map view keeps the list below the pane: every note the pane shows
+          names entries the reader can actually see. */}
+      {view === 'map' ? mapPane : null}
+      {loading ? (
         <div aria-label="Loading history">
           <div className="skeleton" aria-hidden="true">
             <span />

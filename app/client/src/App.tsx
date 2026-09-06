@@ -434,13 +434,6 @@ export function App(): JSX.Element {
                 snapshots={mapSnapshots}
                 ungroundedCount={ungroundedCount}
                 fetchDetails={(id) => fetchPlaceDetails(id)}
-                onDegraded={(message) => {
-                  // The pane cannot show its promise (no key, load failure,
-                  // nothing pinnable): fall back to the list so its note
-                  // never stands alone without entries below it.
-                  setHistoryView('list');
-                  announce(message, 'busy');
-                }}
               />
             }
             selectedId={entryId}

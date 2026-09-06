@@ -9,9 +9,6 @@ interface MapPaneProps {
   snapshots: GroundingSnapshot[];
   ungroundedCount: number;
   fetchDetails: (placeId: string) => Promise<PlaceDetails | null>;
-  /** The pane cannot show its promise (no key, load failure, nothing pinnable):
-   *  the parent falls back to the list so the note never stands alone. */
-  onDegraded: (message: string) => void;
 }
 
 type PaneState =
@@ -29,28 +26,17 @@ function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;');
 }
 
-export function MapPane({ snapshots, ungroundedCount, fetchDetails, onDegraded }: MapPaneProps): JSX.Element {
+export function MapPane({ snapshots, ungroundedCount, fetchDetails }: MapPaneProps): JSX.Element {
   const [state, setState] = useState<PaneState>({ kind: 'loading-key' });
   const el = useRef<HTMLDivElement | null>(null);
-  // Degradation reports once per settled outcome, never per render.
-  const reported = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    async function degrade(message: string, next: PaneState): Promise<void> {
-      if (cancelled || reported.current === message) return;
-      reported.current = message;
-      setState(next);
-      onDegraded(message);
-    }
     async function resolve(): Promise<void> {
       const key = await browserKey();
       if (cancelled) return;
       if (key === null) {
-        await degrade(
-          'Map view needs its browser key — showing the list instead.',
-          { kind: 'no-key' },
-        );
+        setState({ kind: 'no-key' });
         return;
       }
       setState({ kind: 'loading-pins' });
@@ -86,22 +72,18 @@ export function MapPane({ snapshots, ungroundedCount, fetchDetails, onDegraded }
       try {
         await loadMaps(key);
       } catch (err) {
-        await degrade(
-          `The map could not load (${err instanceof Error ? err.message : 'Maps library failed to load'}) — showing the list instead.`,
-          {
+        if (!cancelled) {
+          setState({
             kind: 'load-error',
             message: err instanceof Error ? err.message : 'Maps library failed to load',
-          },
-        );
+          });
+        }
         return;
       }
       if (cancelled) return;
       const pins = settled.filter((p): p is Pin => p !== null);
       if (pins.length === 0) {
-        await degrade(
-          'Nothing pinnable yet — showing the list instead.',
-          { kind: 'ready', pins, legacy: dedupeSnapshots(snapshots) },
-        );
+        setState({ kind: 'ready', pins, legacy: dedupeSnapshots(snapshots) });
         return;
       }
       // Cached without coordinates = grounded before pins shipped. Re-fetching
