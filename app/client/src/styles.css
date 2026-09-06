@@ -260,6 +260,20 @@ button.linklike {
   border-radius: 3px;
   background: var(--wash);
 }
+.mapview.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  height: 14rem;
+}
+.mapview-empty-note {
+  margin: 0;
+  max-width: 32rem;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
 
 .mapnote {
   margin: 0.75rem 0 0;

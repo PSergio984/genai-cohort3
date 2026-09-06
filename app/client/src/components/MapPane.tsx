@@ -173,13 +173,22 @@ export function MapPane({ snapshots, ungroundedCount, fetchDetails }: MapPanePro
     );
   }
   if (state.pins.length === 0) {
+    // A visibly empty map field, not a bare note: the view must read as a
+    // map with nothing on it yet, or the tab feels dead.
     return (
-      <p className="mapnote">
-        Nothing pinnable yet — grounded places appear here once their cached locations resolve.
-        {ungroundedCount > 0
-          ? ` ${ungroundedCount} ungrounded ${ungroundedCount === 1 ? 'entry stays' : 'entries stay'} in the list, never faked onto a pin.`
-          : ''}
-      </p>
+      <div>
+        <div className="mapview is-empty" role="img" aria-label="Map with no pins yet">
+          <p className="mapview-empty-note">
+            No pins yet — grounded places appear here once their cached locations resolve.
+          </p>
+        </div>
+        <div className="meta">
+          {state.legacy.length > 0
+            ? `${state.legacy.map((s) => s.name).join(', ')} grounded before pins shipped — listed below`
+            : 'Nothing grounded yet — write an entry and ground it in a place.'}
+          {ungroundedCount > 0 ? ` · ${ungroundedCount} ungrounded aside` : ''}
+        </div>
+      </div>
     );
   }
   return (
