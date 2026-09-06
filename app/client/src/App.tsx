@@ -46,6 +46,8 @@ export function App(): JSX.Element {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [filter, setFilter] = useState<HistoryFilter>('all');
   const [historyView, setHistoryView] = useState<HistoryView>('list');
+  // Bumped after a coordinates resync so the pane re-resolves from cache.
+  const [mapEpoch, setMapEpoch] = useState(0);
 
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   // The query a completed autocomplete round answered. The empty-result
@@ -363,6 +365,33 @@ export function App(): JSX.Element {
     [api],
   );
 
+  const handleResync = useCallback(
+    async (placeIds: string[]): Promise<void> => {
+      if (api === null || placeIds.length === 0) return;
+      announce(
+        `Resyncing ${placeIds.length} place${placeIds.length === 1 ? '' : 's'}… (one cached refresh each)`,
+        'busy',
+      );
+      let ok = 0;
+      for (const placeId of placeIds) {
+        try {
+          await api.refreshPlace(placeId);
+          ok++;
+        } catch {
+          /* stays legacy; the pane still lists it */
+        }
+      }
+      setMapEpoch((e) => e + 1);
+      announce(
+        ok === placeIds.length
+          ? `Resynced ${ok} of ${placeIds.length} — pins resolving.`
+          : `Resynced ${ok} of ${placeIds.length} — the rest stay listed.`,
+        ok > 0 ? 'ok' : 'error',
+      );
+    },
+    [api, announce],
+  );
+
   const signedInName =
     user === null ? '' : (user.displayName ?? user.email ?? 'Signed in');
 
@@ -431,9 +460,11 @@ export function App(): JSX.Element {
             onViewChange={setHistoryView}
             mapPane={
               <MapPane
+                key={mapEpoch}
                 snapshots={mapSnapshots}
                 ungroundedCount={ungroundedCount}
                 fetchDetails={(id) => fetchPlaceDetails(id)}
+                onResync={(ids) => handleResync(ids)}
               />
             }
             selectedId={entryId}

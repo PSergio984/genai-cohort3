@@ -90,6 +90,24 @@ class FakeStore implements JournalStore {
     return this.cache.get(`${vaultId}/${placeId}`) ?? null;
   }
 
+  async refreshPlace(
+    vaultId: string,
+    placeId: string,
+    fetch: (placeId: string) => Promise<FetchedPlace>,
+  ): Promise<PlaceCacheRecord | null> {
+    if (!this.cache.has(`${vaultId}/${placeId}`)) {
+      return null;
+    }
+    const f = await fetch(placeId);
+    const record: PlaceCacheRecord = {
+      placeJson: f.placeJson,
+      fetchedAt: iso(f.fetchedAtMs),
+      expiresAt: iso(f.fetchedAtMs + 7 * 864e5),
+    };
+    this.cache.set(`${vaultId}/${placeId}`, record);
+    return record;
+  }
+
   async removeGrounding(vaultId: string, entryId: string, ownerUid: string, placeId: string): Promise<void> {
     const e = await this.getEntry(vaultId, entryId, ownerUid);
     if (e === null) {
@@ -490,6 +508,72 @@ describe('journal routes', () => {
     const legacy = await get(`${url}/api/vaults/v1/places/ChIJX`);
     assert.equal(legacy.status, 200);
     assert.equal((legacy.json.details as Record<string, unknown>).location, undefined);
+  });
+
+  it('refreshes a cached place with coordinates exactly once per call', async () => {
+    const store = new FakeStore();
+    let calls = 0;
+    const refreshApp = express();
+    refreshApp.use(express.json());
+    refreshApp.use(
+      '/api/vaults',
+      createJournalRouter({
+        store,
+        fetchPlace: (async () => {
+          calls++;
+          return {
+            placeJson: {
+              ...PLACE_JSON,
+              location: { latitude: 14.5826, longitude: 120.9783 },
+            },
+            fetchedAtMs: T0,
+          };
+        }) as JournalDeps['fetchPlace'],
+        gemini: geminiOk(),
+        verify: fakeVerify,
+      }),
+    );
+    let extra: Server | undefined;
+    const base2 = await new Promise<string>((resolve, reject) => {
+      extra = refreshApp.listen(0, '127.0.0.1', () => {
+        const a = extra?.address();
+        if (a === null || a === undefined || typeof a === 'string') {
+          reject(new Error('no address'));
+          return;
+        }
+        resolve(`http://127.0.0.1:${a.port}`);
+      });
+    });
+    try {
+      const created = await post(`${base2}/api/vaults/v4/entries`, { text: 'here' }, 'Bearer tok-v4');
+      const eid = created.json.id as string;
+      await post(
+        `${base2}/api/vaults/v4/entries/${eid}/groundings`,
+        { placeId: 'ChIJX' },
+        'Bearer tok-v4',
+      );
+      assert.equal(calls, 1);
+      const refreshed = await post(`${base2}/api/vaults/v4/places/ChIJX/refresh`, {}, 'Bearer tok-v4');
+      assert.equal(refreshed.status, 200);
+      assert.deepEqual((refreshed.json.details as Record<string, unknown>).location, {
+        latitude: 14.5826,
+        longitude: 120.9783,
+      });
+      assert.equal(calls, 2);
+      const hit = await get(`${base2}/api/vaults/v4/places/ChIJX`, 'Bearer tok-v4');
+      assert.deepEqual((hit.json.details as Record<string, unknown>).location, {
+        latitude: 14.5826,
+        longitude: 120.9783,
+      });
+    } finally {
+      extra?.closeAllConnections();
+      await new Promise<void>((resolve) => extra?.close(() => resolve()));
+    }
+  });
+
+  it('refresh of a never-cached place 404s without fetching', async () => {
+    const miss = await post(`${url}/api/vaults/v1/places/ChIJNOPE/refresh`, {});
+    assert.equal(miss.status, 404);
   });
 
   it('maps model failures to 429/502/500', async () => {

@@ -169,13 +169,30 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
         }
       }
       const fetched: FetchedPlace = await fetch(placeId);
-      const record: PlaceCacheRecord = {
-        placeJson: fetched.placeJson,
-        fetchedAt: new Date(fetched.fetchedAtMs).toISOString(),
-        expiresAt: new Date(computeExpiresAt(fetched.fetchedAtMs)).toISOString(),
-      };
+      const record = buildRecord(fetched);
       await ref.set(record);
       return record;
     },
+
+    // Record clock comes from the fetch itself, backend-computed like getPlace.
+    async refreshPlace(vaultId, placeId, fetch): Promise<PlaceCacheRecord | null> {
+      const ref = placeDoc(db, vaultId, placeId);
+      if (!(await ref.get()).exists) {
+        return null;
+      }
+      const fetched: FetchedPlace = await fetch(placeId);
+      const record = buildRecord(fetched);
+      await ref.set(record);
+      return record;
+    },
+  };
+}
+
+/** Shape a fetch into the persisted record: backend-computed clocks, one shape. */
+function buildRecord(fetched: FetchedPlace): PlaceCacheRecord {
+  return {
+    placeJson: fetched.placeJson,
+    fetchedAt: new Date(fetched.fetchedAtMs).toISOString(),
+    expiresAt: new Date(computeExpiresAt(fetched.fetchedAtMs)).toISOString(),
   };
 }

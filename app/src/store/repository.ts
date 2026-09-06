@@ -27,10 +27,10 @@ export interface GroundingSnapshot {
 }
 
 /**
- * One message in a Session's thread. Model turns freeze the placeIds they
+ * One Turn in a Session. Model turns freeze the placeIds they
  * saw at reflect time — the per-reflection audit trail (spec: "see the exact
  * place snapshot a Reflection was based on"). User turns carry the entry's
- * placeIds likewise (what the conversation could see).
+ * placeIds likewise (what the Session could see).
  */
 export interface TurnRecord {
   readonly by: 'user' | 'model';
@@ -43,7 +43,7 @@ export interface EntryRecord {
   readonly text: string;
   readonly placeIds: readonly string[];
   readonly groundingSnapshots: readonly GroundingSnapshot[];
-  /** Append-only thread: every turn recorded, never overwritten. */
+  /** Append-only turns: every turn recorded, never overwritten. */
   readonly turns: readonly TurnRecord[];
   readonly createdAt: string;
 }
@@ -73,7 +73,7 @@ export interface JournalStore {
   /** Read one Entry; null when missing OR owned by someone else (no oracle). */
   getEntry(vaultId: string, entryId: string, ownerUid: string): Promise<EntryRecord | null>;
   /**
-   * Append Turns to an Entry's thread (user follow-ups and/or the model
+   * Append Turns to an Entry's Session (user follow-ups and/or the model
    * reply). Verifies ownership first. Transactional: identical repeat texts
    * are distinct turns and must all be recorded.
    */
@@ -111,4 +111,15 @@ export interface JournalStore {
    * record or null. Never fetches — display reads cost zero API quota.
    */
   getCachedPlace(vaultId: string, placeId: string): Promise<PlaceCacheRecord | null>;
+  /**
+   * Forced re-fetch + overwrite for records cached before a schema gain
+   * (e.g. coordinates for map pins). Returns null — without fetching — when
+   * nothing is cached: refresh only upgrades what grounding already stored.
+   * Explicit user action only; never part of display reads.
+   */
+  refreshPlace(
+    vaultId: string,
+    placeId: string,
+    fetch: (placeId: string) => Promise<FetchedPlace>,
+  ): Promise<PlaceCacheRecord | null>;
 }

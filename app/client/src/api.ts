@@ -27,6 +27,9 @@ export interface ApiClient {
   reflect(entryId: string, history?: Turn[]): Promise<string>;
   removeGrounding(entryId: string, placeId: string): Promise<void>;
   getPlaceDetails(placeId: string): Promise<PlaceDetails>;
+  /** Explicit one-place refresh (one Places fetch): upgrades records cached
+   *  before a schema gain so legacy groundings can pin. Throws on 404. */
+  refreshPlace(placeId: string): Promise<PlaceDetails>;
   autocomplete(query: string, sessionToken: string): Promise<Prediction[]>;
 }
 
@@ -104,6 +107,13 @@ export function createApiClient(
       // Cache-only display read: zero quota by design, explicit expand only.
       const out = await call<{ details: PlaceDetails }>(
         `${base}/places/${encodeURIComponent(placeId)}`,
+      );
+      return out.details;
+    },
+    async refreshPlace(placeId: string): Promise<PlaceDetails> {
+      const out = await call<{ details: PlaceDetails }>(
+        `${base}/places/${encodeURIComponent(placeId)}/refresh`,
+        { method: 'POST' },
       );
       return out.details;
     },

@@ -161,7 +161,7 @@ describe('createPlaceFetcher', () => {
     assert.equal(headers['X-Goog-FieldMask'], CORE_MASK);
   });
 
-  it('threads an optional session token into the details URL', async () => {
+  it('passes an optional session token into the details URL', async () => {
     const { impl, seen } = fakeFetch(FULL_BODY);
     await createPlaceFetcher('k', impl, () => 0)('ChIJX', 'tok-1');
     assert.ok(seen[0]?.url.includes('sessionToken=tok-1'));

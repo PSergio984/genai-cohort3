@@ -278,7 +278,7 @@ describe('saveEntry / listEntries', () => {
     assert.equal(listed[0]?.entry.groundingSnapshots.length, 1);
   });
 
-  it('removeGrounding an unattached place is a no-op', async () => {
+  it('removeGrounding a never-grounded place is a no-op', async () => {
     const v = freshVault();
     const id = await store.saveEntry(v, entry());
     await store.removeGrounding(v, id, 'alice', 'ChIJNOPE');
@@ -398,5 +398,32 @@ describe('getPlace read-through cache', () => {
 
   it('getCachedPlace is null on a miss', async () => {
     assert.equal(await store.getCachedPlace(freshVault(), 'nope'), null);
+  });
+
+  it('refreshPlace refetches a fresh record and overwrites it', async () => {
+    const v = freshVault();
+    await store.getPlace(v, 'p1', async () => place, T0);
+    let calls = 0;
+    const upgraded = {
+      placeJson: { name: 'Rizal Park', location: { latitude: 1, longitude: 2 } },
+      fetchedAtMs: T0 + 1000,
+    };
+    const got = await store.refreshPlace(v, 'p1', async () => {
+      calls++;
+      return upgraded;
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(got?.placeJson, upgraded.placeJson);
+    assert.equal(got?.fetchedAt, iso(T0 + 1000));
+  });
+
+  it('refreshPlace is null without fetching when nothing is cached', async () => {
+    let calls = 0;
+    const got = await store.refreshPlace(freshVault(), 'nope', async () => {
+      calls++;
+      return place;
+    });
+    assert.equal(got, null);
+    assert.equal(calls, 0);
   });
 });

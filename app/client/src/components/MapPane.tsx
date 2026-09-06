@@ -9,6 +9,9 @@ interface MapPaneProps {
   snapshots: GroundingSnapshot[];
   ungroundedCount: number;
   fetchDetails: (placeId: string) => Promise<PlaceDetails | null>;
+  /** Explicit per-place refresh (one Places fetch each): upgrades records
+   *  cached before coordinates so legacy groundings can pin. */
+  onResync: (placeIds: string[]) => Promise<void>;
 }
 
 type PaneState =
@@ -26,8 +29,9 @@ function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;');
 }
 
-export function MapPane({ snapshots, ungroundedCount, fetchDetails }: MapPaneProps): JSX.Element {
+export function MapPane({ snapshots, ungroundedCount, fetchDetails, onResync }: MapPaneProps): JSX.Element {
   const [state, setState] = useState<PaneState>({ kind: 'loading-key' });
+  const [resyncing, setResyncing] = useState(false);
   const el = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -174,7 +178,10 @@ export function MapPane({ snapshots, ungroundedCount, fetchDetails }: MapPanePro
   }
   if (state.pins.length === 0) {
     // A visibly empty map field, not a bare note: the view must read as a
-    // map with nothing on it yet, or the tab feels dead.
+    // map with nothing on it yet, or the tab feels dead. The resync affordance
+    // lives here too — an all-legacy vault would otherwise strand with zero
+    // pins and no way to upgrade from this view.
+    const legacy = state.legacy;
     return (
       <div>
         <div className="mapview is-empty" role="img" aria-label="Map with no pins yet">
@@ -183,11 +190,30 @@ export function MapPane({ snapshots, ungroundedCount, fetchDetails }: MapPanePro
           </p>
         </div>
         <div className="meta">
-          {state.legacy.length > 0
-            ? `${state.legacy.map((s) => s.name).join(', ')} grounded before pins shipped — listed below`
+          {legacy.length > 0
+            ? `${legacy.map((s) => s.name).join(', ')} grounded before pins shipped — listed below`
             : 'Nothing grounded yet — write an entry and ground it in a place.'}
           {ungroundedCount > 0 ? ` · ${ungroundedCount} ungrounded aside` : ''}
         </div>
+        {legacy.length > 0 ? (
+          <div className="row">
+            <button
+              type="button"
+              className="quiet"
+              disabled={resyncing}
+              onClick={() => {
+                const ids = legacy.map((s) => s.placeId);
+                setResyncing(true);
+                void onResync(ids).finally(() => setResyncing(false));
+              }}
+            >
+              {resyncing
+                ? 'Resyncing…'
+                : `Resync ${legacy.length} place${legacy.length === 1 ? '' : 's'} for pins`}
+            </button>
+          </div>
+        ) : null}
+        <p className="hint">Resync spends one cached refresh per place — explicit, like Details.</p>
       </div>
     );
   }
@@ -203,6 +229,25 @@ export function MapPane({ snapshots, ungroundedCount, fetchDetails }: MapPanePro
           : ''}
         {ungroundedCount > 0 ? ` · ${ungroundedCount} ungrounded aside` : ''}
       </div>
+      {state.legacy.length > 0 ? (
+        <div className="row">
+          <button
+            type="button"
+            className="quiet"
+            disabled={resyncing}
+            onClick={() => {
+              const ids = state.legacy.map((s) => s.placeId);
+              setResyncing(true);
+              void onResync(ids).finally(() => setResyncing(false));
+            }}
+          >
+            {resyncing
+              ? 'Resyncing…'
+              : `Resync ${state.legacy.length} place${state.legacy.length === 1 ? '' : 's'} for pins`}
+          </button>
+        </div>
+      ) : null}
+      <p className="hint">Resync spends one cached refresh per place — explicit, like Details.</p>
     </div>
   );
 }

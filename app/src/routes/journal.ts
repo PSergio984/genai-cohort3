@@ -101,6 +101,17 @@ function storeError(res: Response, err: unknown): void {
   sendError(res, 500, 'internal error');
 }
 
+/** Map a Places lookup failure the way every grounding-adjacent route does:
+ *  unknown place ids 404, everything else 502 without leaking upstream text. */
+function placeLookupError(res: Response, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/HTTP 404/.test(message)) {
+    sendError(res, 404, 'place not found');
+    return;
+  }
+  sendError(res, 502, 'place lookup failed');
+}
+
 /** Display view over a cached record: snapshot fields plus inline card
  *  facts when the cached payload carries them. Never fetches (zero quota):
  *  records cached before location-bearing fetches stay pin-less (their
@@ -255,12 +266,7 @@ export function createJournalRouter(deps: JournalDeps): Router {
       try {
         record = await deps.store.getPlace(vaultId, placeId, (id) => deps.fetchPlace(id, token));
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (/HTTP 404/.test(message)) {
-          sendError(res, 404, 'place not found');
-          return;
-        }
-        sendError(res, 502, 'place lookup failed');
+        placeLookupError(res, err);
         return;
       }
       const snapshot = snapshotFromCache(placeId, record);
@@ -368,6 +374,37 @@ export function createJournalRouter(deps: JournalDeps): Router {
     }
     try {
       const record = await deps.store.getCachedPlace(vaultId, placeId);
+      if (record === null) {
+        sendError(res, 404, 'place not cached');
+        return;
+      }
+      res.status(200).json({ details: detailsFromCache(placeId, record) });
+    } catch (err) {
+      storeError(res, err);
+    }
+  });
+
+  // Explicit one-place refresh for records cached before a schema gain (e.g.
+  // coordinates for map pins). POST because it spends quota: one Places fetch
+  // per call, then the record serves cache-only again. 404s when nothing is
+  // cached — refresh upgrades what grounding stored, nothing else.
+  router.post('/:vaultId/places/:placeId/refresh', async (req: Request, res: Response) => {
+    const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
+    const placeId = pathParam(res, req.params.placeId, 'placeId');
+    if (vaultId === undefined || placeId === undefined) {
+      return;
+    }
+    if (!checkVault(res, vaultId, req)) {
+      return;
+    }
+    try {
+      let record;
+      try {
+        record = await deps.store.refreshPlace(vaultId, placeId, (id) => deps.fetchPlace(id));
+      } catch (err) {
+        placeLookupError(res, err);
+        return;
+      }
       if (record === null) {
         sendError(res, 404, 'place not cached');
         return;
