@@ -368,8 +368,7 @@ describe('journal routes', () => {
     assert.deepEqual(body.entries[0]?.entry.placeIds, []);
   });
 
-  it('refuses grounding removal after reflection, and 404s unknown entries', async () => {
-    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+  it('refuses grounding removal after reflection, and 404s unknown entries', async () => {    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
     const id = created.json.id as string;
     await post(`${url}/api/vaults/v1/entries/${id}/groundings`, { placeId: 'ChIJX' });
     await post(`${url}/api/vaults/v1/entries/${id}/reflections`, {});
@@ -384,6 +383,41 @@ describe('journal routes', () => {
     });
     assert.equal(missing.status, 404);
     const unauth = await fetch(`${url}/api/vaults/v1/entries/${id}/groundings/ChIJX`, { method: 'DELETE' });
+    assert.equal(unauth.status, 401);
+  });
+
+  it('removing a never-attached place 404s instead of silently succeeding', async () => {
+    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+    const id = created.json.id as string;
+    const r = await fetch(`${url}/api/vaults/v1/entries/${id}/groundings/ChIJNOPE`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer tok-v1' },
+    });
+    assert.equal(r.status, 404);
+    assert.deepEqual(await r.json(), { error: 'place not attached' });
+  });
+
+  it('reads a single entry with its thread', async () => {
+    const created = await post(`${url}/api/vaults/v1/entries`, { text: 'here' });
+    const id = created.json.id as string;
+    await post(`${url}/api/vaults/v1/entries/${id}/groundings`, { placeId: 'ChIJX' });
+    await post(`${url}/api/vaults/v1/entries/${id}/reflections`, {
+      history: [{ by: 'user', text: 'more?' }],
+    });
+    const got = await get(`${url}/api/vaults/v1/entries/${id}`);
+    assert.equal(got.status, 200);
+    const body = got.json as unknown as {
+      id: string;
+      entry: { text: string; turns: Array<{ by: string; text: string; placeIds: string[] }> };
+    };
+    assert.equal(body.id, id);
+    assert.deepEqual(body.entry.turns, [
+      { by: 'user', text: 'more?', placeIds: ['ChIJX'] },
+      { by: 'model', text: 'grounded words', placeIds: ['ChIJX'] },
+    ]);
+    const missing = await get(`${url}/api/vaults/v1/entries/nope`);
+    assert.equal(missing.status, 404);
+    const unauth = await get(`${url}/api/vaults/v1/entries/${id}`, '');
     assert.equal(unauth.status, 401);
   });
 

@@ -26,8 +26,13 @@ function byId(id) { return document.getElementById(id); }
 function show(id) { byId(id).hidden = false; }
 function hide(id) { byId(id).hidden = true; }
 function newSessionToken() { return 'sess-' + Math.random().toString(36).slice(2, 12); }
-function entriesPath() { return '/api/vaults/' + encodeURIComponent(vaultId) + '/entries'; }
-function entryPath(id) { return entriesPath() + '/' + encodeURIComponent(id); }
+  function entriesPath() { return '/api/vaults/' + encodeURIComponent(vaultId) + '/entries'; }
+  function entryPath(id) { return entriesPath() + '/' + encodeURIComponent(id); }
+  function placePath(id, placeId) { return entryPath(id) + '/groundings/' + encodeURIComponent(placeId); }
+  function vaultPlacesPath(placeId) {
+    return '/api/vaults/' + encodeURIComponent(vaultId) + '/places/' + encodeURIComponent(placeId);
+  }
+  function formatTurn(t) { return (t.by === 'user' ? 'You: ' : 'Gemini: ') + t.text; }
 
 async function api(path, options) {
   options = options || {};
@@ -193,7 +198,7 @@ async function attachPlace(p) {
     var open = li.querySelector('.details');
     if (open) { open.remove(); button.textContent = 'Details'; return; }
     try {
-      var out = await api(entryPath(entryId).replace(/\/entries\/[^/]+$/, '') + '/places/' + encodeURIComponent(placeId));
+      var out = await api(vaultPlacesPath(placeId));
       var d = out.details || {};
       var div = document.createElement('div');
       div.className = 'details meta';
@@ -210,7 +215,7 @@ async function attachPlace(p) {
   async function removeGrounding(placeId) {
     if (!entryId) return;
     try {
-      await api(entryPath(entryId) + '/groundings/' + encodeURIComponent(placeId), { method: 'DELETE' });
+      await api(placePath(entryId, placeId), { method: 'DELETE' });
       attached = attached.filter(function (s) { return s.placeId !== placeId; });
       renderAttached();
       await refreshHistory();
@@ -218,19 +223,30 @@ async function attachPlace(p) {
   }
 
   async function loadThread() {
-    var out = await api(entriesPath() + '?limit=100');
-    var found = (out.entries || []).filter(function (e) { return e.id === entryId; })[0];
-    renderThread(found ? found.entry.turns : []);
+    var out = await api(entryPath(entryId));
+    renderThread(out.entry.turns, out.entry.groundingSnapshots || []);
   }
 
-  function renderThread(turns) {
+  function snapshotName(snapshots, placeId) {
+    var found = (snapshots || []).filter(function (s) { return s.placeId === placeId; })[0];
+    return found ? found.name : placeId;
+  }
+
+  function renderThread(turns, snapshots) {
     var div = byId('reflections');
     div.innerHTML = '';
     (turns || []).forEach(function (t) {
       var p = document.createElement('div');
       p.className = 'reflection';
-      p.textContent = (t.by === 'user' ? 'You: ' : 'Gemini: ') + t.text;
+      p.textContent = formatTurn(t);
       div.appendChild(p);
+      // Audit trail: which places this turn saw.
+      if (t.by === 'model' && Array.isArray(t.placeIds) && t.placeIds.length > 0) {
+        var meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = 'Grounded in: ' + t.placeIds.map(function (id) { return snapshotName(snapshots, id); }).join(', ');
+        div.appendChild(meta);
+      }
     });
   }
 
@@ -259,7 +275,7 @@ async function refreshHistory() {
         (row.entry.turns || []).forEach(function (t) {
           var p = document.createElement('div');
           p.className = 'reflection';
-          p.textContent = (t.by === 'user' ? 'You: ' : 'Gemini: ') + t.text;
+          p.textContent = formatTurn(t);
           li.appendChild(p);
         });
         ul.appendChild(li);

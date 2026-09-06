@@ -4,7 +4,7 @@
 // `grounded-journal` database; Vault isolation is enforced by
 // firestore.rules, mirrored here by always scoping under the Vault.
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore, FieldValue, type Firestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import {
   computeExpiresAt,
   isStale,
@@ -29,6 +29,29 @@ export function createDeps(projectId: string): FirestoreDeps {
 
 function vaultDoc(db: Firestore, vaultId: string) {
   return db.doc(`vaults/${vaultId}`);
+}
+
+/**
+ * Load an entry inside a transaction, verifying ownership. Single home for
+ * the read + owner-mismatch guard the transactional writers share (defense
+ * in depth — the Admin SDK bypasses firestore.rules).
+ */
+async function requireOwnedEntry(
+  tx: Transaction,
+  db: Firestore,
+  vaultId: string,
+  entryId: string,
+  ownerUid: string,
+): Promise<EntryRecord> {
+  const snap = await tx.get(entriesCol(db, vaultId).doc(entryId));
+  const data = snap.data() as EntryRecord | undefined;
+  if (data === undefined) {
+    throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
+  }
+  if (data.ownerUid !== ownerUid) {
+    throw new Error(`owner mismatch: entry belongs to another Vault owner`);
+  }
+  return data;
 }
 
 function entriesCol(db: Firestore, vaultId: string) {
@@ -88,14 +111,7 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
       }
       const ref = entriesCol(db, vaultId).doc(entryId);
       await db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref);
-        const data = snap.data() as EntryRecord | undefined;
-        if (data === undefined) {
-          throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
-        }
-        if (data.ownerUid !== ownerUid) {
-          throw new Error(`owner mismatch: entry belongs to another Vault owner`);
-        }
+        const data = await requireOwnedEntry(tx, db, vaultId, entryId, ownerUid);
         tx.update(ref, { turns: [...(data.turns ?? []), ...turns] });
       });
     },
@@ -103,14 +119,7 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
     async removeGrounding(vaultId, entryId, ownerUid, placeId): Promise<void> {
       const ref = entriesCol(db, vaultId).doc(entryId);
       await db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref);
-        const data = snap.data() as EntryRecord | undefined;
-        if (data === undefined) {
-          throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
-        }
-        if (data.ownerUid !== ownerUid) {
-          throw new Error(`owner mismatch: entry belongs to another Vault owner`);
-        }
+        const data = await requireOwnedEntry(tx, db, vaultId, entryId, ownerUid);
         // Domain freeze rule, enforced server-side too: the first model
         // turn seals the Groundings (the route checks first for a clean 409).
         if (data.turns.some((t) => t.by === 'model')) {
@@ -128,14 +137,7 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
       // Transaction: the duplicate check and the write are atomic, so two
       // concurrent attaches of the same place cannot double-append.
       await db.runTransaction(async (tx) => {
-        const snap = await tx.get(ref);
-        const data = snap.data() as EntryRecord | undefined;
-        if (data === undefined) {
-          throw new Error(`entry not found: vaults/${vaultId}/entries/${entryId}`);
-        }
-        if (data.ownerUid !== ownerUid) {
-          throw new Error(`owner mismatch: entry belongs to another Vault owner`);
-        }
+        const data = await requireOwnedEntry(tx, db, vaultId, entryId, ownerUid);
         // Idempotent on placeId: duplicate attaches are refused upstream, and
         // a retry must not double-append.
         if (data.placeIds.includes(snapshot.placeId)) {

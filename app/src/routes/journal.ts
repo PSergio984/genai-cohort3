@@ -105,9 +105,7 @@ function storeError(res: Response, err: unknown): void {
  *  facts when the cached payload carries them. Never fetches (zero quota). */
 export function detailsFromCache(placeId: string, record: PlaceCacheRecord): PlaceDetails {
   const snap = snapshotFromCache(placeId, record);
-  const raw: unknown = record.placeJson;
-  const obj: Partial<PlaceDetails> =
-    typeof raw === 'object' && raw !== null ? (raw as Partial<PlaceDetails>) : {};
+  const obj = parsePlaceJson(record.placeJson);
   return {
     ...snap,
     ...(typeof obj.rating === 'number' ? { rating: obj.rating } : {}),
@@ -117,11 +115,16 @@ export function detailsFromCache(placeId: string, record: PlaceCacheRecord): Pla
   };
 }
 
+/** Parse the cached payload once; unknown shapes degrade to blanks. */
+function parsePlaceJson(placeJson: unknown): Partial<PlaceDetails> {
+  return typeof placeJson === 'object' && placeJson !== null
+    ? (placeJson as Partial<PlaceDetails>)
+    : {};
+}
+
 /** Build the frozen snapshot from a cached place record; never crashes on shape. */
 export function snapshotFromCache(placeId: string, record: PlaceCacheRecord): GroundingSnapshot {
-  const raw: unknown = record.placeJson;
-  const obj: Partial<PlaceDetails> =
-    typeof raw === 'object' && raw !== null ? (raw as Partial<PlaceDetails>) : {};
+  const obj = parsePlaceJson(record.placeJson);
   return {
     placeId,
     name: obj.name !== undefined && obj.name !== '' ? obj.name : placeId,
@@ -176,6 +179,24 @@ export function createJournalRouter(deps: JournalDeps): Router {
     try {
       const entries = await deps.store.listEntries(vaultId, req.ownerUid, limit);
       res.status(200).json({ entries });
+    } catch (err) {
+      storeError(res, err);
+    }
+  });
+
+  router.get('/:vaultId/entries/:entryId', async (req: Request, res: Response) => {
+    const vaultId = pathParam(res, req.params.vaultId, 'vaultId');
+    const entryId = pathParam(res, req.params.entryId, 'entryId');
+    if (vaultId === undefined || entryId === undefined || !checkVault(res, vaultId, req)) {
+      return;
+    }
+    try {
+      const entry = await deps.store.getEntry(vaultId, entryId, req.ownerUid);
+      if (entry === null) {
+        sendError(res, 404, 'entry not found');
+        return;
+      }
+      res.status(200).json({ id: entryId, entry });
     } catch (err) {
       storeError(res, err);
     }
@@ -299,6 +320,17 @@ export function createJournalRouter(deps: JournalDeps): Router {
       return;
     }
     try {
+      // Honest 404 for places that were never attached: silent no-ops mask
+      // caller bugs, while the store stays idempotent for safe retries.
+      const entry = await deps.store.getEntry(vaultId, entryId, req.ownerUid);
+      if (entry === null) {
+        sendError(res, 404, 'entry not found');
+        return;
+      }
+      if (!entry.placeIds.includes(placeId)) {
+        sendError(res, 404, 'place not attached');
+        return;
+      }
       await deps.store.removeGrounding(vaultId, entryId, req.ownerUid, placeId);
       res.status(200).json({ removed: true });
     } catch (err) {
