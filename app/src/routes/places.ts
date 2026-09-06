@@ -35,7 +35,10 @@ export function createPlacesRouter(deps: PlacesDeps): Router {
         sessionToken,
       });
       res.status(200).json({ predictions });
-    } catch {
+    } catch (err) {
+      // Upstream status rides the server log (never the client) so key and
+      // quota failures stay diagnosable after deploy.
+      console.error(`places autocomplete failed upstream: ${err instanceof Error ? err.message : err}`);
       res.status(502).json({ error: 'place lookup failed' });
     }
   });

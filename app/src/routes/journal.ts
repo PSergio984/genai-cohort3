@@ -102,9 +102,12 @@ function storeError(res: Response, err: unknown): void {
 }
 
 /** Map a Places lookup failure the way every grounding-adjacent route does:
- *  unknown place ids 404, everything else 502 without leaking upstream text. */
+ *  unknown place ids 404, everything else 502 without leaking upstream text.
+ *  The upstream status rides the server log (never the client) so key and
+ *  quota failures stay diagnosable after deploy. */
 function placeLookupError(res: Response, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
+  console.error(`places lookup failed upstream: ${message}`);
   if (/HTTP 404/.test(message)) {
     sendError(res, 404, 'place not found');
     return;
