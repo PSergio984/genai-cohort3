@@ -8,6 +8,7 @@ import { getFirestore, FieldValue, type Firestore, type Transaction } from 'fire
 import {
   computeExpiresAt,
   isStale,
+  normalizeEntryRecord,
   type EntryRecord,
   type EntryRef,
   type FetchedPlace,
@@ -51,7 +52,7 @@ async function requireOwnedEntry(
   if (data.ownerUid !== ownerUid) {
     throw new Error(`owner mismatch: entry belongs to another Vault owner`);
   }
-  return data;
+  return normalizeEntryRecord(data);
 }
 
 function entriesCol(db: Firestore, vaultId: string) {
@@ -88,7 +89,7 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
         .orderBy('createdAt', 'desc')
         .limit(limit)
         .get();
-      return snap.docs.map((d) => ({ id: d.id, entry: d.data() as EntryRecord }));
+      return snap.docs.map((d) => ({ id: d.id, entry: normalizeEntryRecord(d.data() as EntryRecord) }));
     },
 
     async getEntry(vaultId, entryId, ownerUid): Promise<EntryRecord | null> {
@@ -98,7 +99,7 @@ export function createFirestoreStore({ db }: FirestoreDeps): JournalStore {
       if (data === undefined || data.ownerUid !== ownerUid) {
         return null;
       }
-      return data;
+      return normalizeEntryRecord(data);
     },
 
     async appendTurns(vaultId, entryId, ownerUid, turns): Promise<void> {

@@ -18,6 +18,25 @@ export function isStale(expiresAtMs: number, nowMs: number): boolean {
   return expiresAtMs <= nowMs;
 }
 
+/**
+ * Legacy vault documents predate newer array fields (turns, placeIds,
+ * groundingSnapshots). Normalize at the store boundary so no caller meets
+ * undefined where it maps, measures, or spreads — the 500s on legacy
+ * entries came from exactly that.
+ */
+export function normalizeEntryRecord(entry: EntryRecord): EntryRecord {
+  return {
+    ownerUid: entry.ownerUid,
+    text: typeof entry.text === 'string' ? entry.text : '',
+    placeIds: Array.isArray(entry.placeIds) ? [...entry.placeIds] : [],
+    groundingSnapshots: Array.isArray(entry.groundingSnapshots)
+      ? [...entry.groundingSnapshots]
+      : [],
+    turns: Array.isArray(entry.turns) ? [...entry.turns] : [],
+    createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : '',
+  };
+}
+
 export interface GroundingSnapshot {
   readonly placeId: string;
   readonly name: string;
