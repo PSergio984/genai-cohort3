@@ -89,7 +89,7 @@ jobs:
           --update-secrets=/secrets/maps-api-key=maps-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest
           --set-env-vars=PROJECT_ID=valid-meridian-475214-e3,FIREBASE_WEB_API_KEY=${{ vars.VITE_FIREBASE_API_KEY }},FIREBASE_WEB_AUTH_DOMAIN=${{ vars.VITE_FIREBASE_AUTH_DOMAIN }},FIREBASE_WEB_PROJECT_ID=${{ vars.VITE_FIREBASE_PROJECT_ID }},FIREBASE_WEB_APP_ID=${{ vars.VITE_FIREBASE_APP_ID }},MAPS_BROWSER_KEY=${{ vars.MAPS_BROWSER_KEY }}
           --service-account=273533786531-compute@developer.gserviceaccount.com
-          --labels=challenge=codelab,app=grounded-journal
+          --labels=challenge=codelab,app=grounded-journal,dev-tutorial=cloud-run-ai-challenge
           --max-instances=4
           --project=valid-meridian-475214-e3
           --quiet
