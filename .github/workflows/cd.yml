@@ -73,8 +73,10 @@ jobs:
 
       # Mirrors cmd.md section 4 (validated syntax) + --max-instances=4 as the
       # billing guardrail. Dockerfile at repo root makes --source . deterministic.
-      # NOTE: --set-secrets and --update-secrets are mutually exclusive — both
-      # bindings ride one --update-secrets (slash-prefixed = volume, else env).
+    # NOTE: --set-secrets and --update-secrets are mutually exclusive — both
+    # bindings ride one --update-secrets (slash-prefixed = volume, else env).
+    # Volume :latest resolves at container start, NOT live: a new secret
+    # version needs a rollout (any push) before the running revision sees it.
       # PROJECT_ID rides --set-env-vars (different flag group, so combinable):
       # without it wireJournal() degrades to health-only and /api/vaults 404s.
       # Firebase web config + Maps browser key ride the same flag into the
